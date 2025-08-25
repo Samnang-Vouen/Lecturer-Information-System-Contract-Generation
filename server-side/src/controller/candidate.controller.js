@@ -1,4 +1,5 @@
 import Candidate from '../model/candidate.model.js';
+import { Department } from '../model/user.model.js';
 
 // GET /api/candidates - list all candidates
 export const getCandidates = async (req, res) => {
@@ -7,7 +8,15 @@ export const getCandidates = async (req, res) => {
     const limit = parseInt(req.query.limit, 10) > 0 ? Math.min(parseInt(req.query.limit, 10), 100) : 10; // cap at 100
     const offset = (page - 1) * limit;
 
+    const where = {};
+    // Department scoping: admins only see their own department's candidates
+    if (req.user?.role === 'admin' && req.user.department_name) {
+      const dept = await Department.findOne({ where: { dept_name: req.user.department_name } });
+      if (dept) where.dept_id = dept.id; else where.dept_id = -1; // no results fallback
+    }
+
     const { rows, count } = await Candidate.findAndCountAll({
+      where,
       order: [['created_at', 'DESC']],
       limit,
       offset,
@@ -30,18 +39,16 @@ export const getCandidates = async (req, res) => {
 // POST /api/candidates - create a candidate
 export const createCandidate = async (req, res) => {
   try {
-    const {
-      fullName,
-      email,
-      phone,
-      positionAppliedFor,
-      interviewDate,
-    } = req.body;
-
+    const { fullName, email, phone, positionAppliedFor, interviewDate } = req.body;
     if (!fullName || !email) {
       return res.status(400).json({ message: 'fullName and email are required' });
     }
-
+    // Determine department from recruiting admin
+    let dept_id = null;
+    if (req.user?.role === 'admin' && req.user.department_name) {
+      const dept = await Department.findOrCreate({ where: { dept_name: req.user.department_name }, defaults: { dept_name: req.user.department_name } });
+      dept_id = dept[0].id;
+    }
     const created = await Candidate.create({
       fullName,
       email,
@@ -49,12 +56,11 @@ export const createCandidate = async (req, res) => {
       positionAppliedFor,
       interviewDate: interviewDate ? new Date(interviewDate) : null,
       status: 'pending',
+  dept_id,
     });
-
     res.status(201).json(created);
   } catch (error) {
     console.error('createCandidate error:', error);
-    // Handle unique email constraint
     if (error?.name === 'SequelizeUniqueConstraintError') {
       return res.status(409).json({ message: 'Email already exists' });
     }
@@ -91,6 +97,10 @@ export const updateCandidate = async (req, res) => {
 
     const candidate = await Candidate.findByPk(id);
     if (!candidate) return res.status(404).json({ message: 'Candidate not found' });
+    if (req.user?.role === 'admin' && req.user.department_name) {
+      const dept = await Department.findOne({ where: { dept_name: req.user.department_name } });
+      if (dept && candidate.dept_id !== dept.id) return res.status(403).json({ message: 'Access denied: different department' });
+    }
 
     await candidate.update(updates);
     res.status(200).json(candidate);
@@ -106,6 +116,10 @@ export const deleteCandidate = async (req, res) => {
     const { id } = req.params;
     const candidate = await Candidate.findByPk(id);
     if (!candidate) return res.status(404).json({ message: 'Candidate not found' });
+    if (req.user?.role === 'admin' && req.user.department_name) {
+      const dept = await Department.findOne({ where: { dept_name: req.user.department_name } });
+      if (dept && candidate.dept_id !== dept.id) return res.status(403).json({ message: 'Access denied: different department' });
+    }
     await candidate.destroy();
     res.status(200).json({ message: 'Candidate deleted' });
   } catch (error) {

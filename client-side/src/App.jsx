@@ -7,13 +7,21 @@ import { Toaster } from 'react-hot-toast';
 import RequireRole from './components/RequireRole.jsx';
 import AdminDashboardLayout from './pages/Admindashboard.jsx';
 import AdminHome from './pages/admin/AdminHome.jsx';
-import LecturerDashboard from './pages/LecturerDashboard.jsx';
+import LecturerDashboard from './pages/lecturer/LecturerDashboard.jsx';
+import Onboarding from './pages/lecturer/Onboarding.jsx';
+import LecturerDashboardLayout from './pages/LecturerDashboardLayout.jsx';
+import LecturerProfile from './pages/lecturer/LecturerProfile.jsx';
+import LecturerContracts from './pages/lecturer/LecturerContracts.jsx';
 import ManagementDashboard from './pages/ManagementDashboard.jsx';
 import Recruitment from './pages/admin/Recruitment.jsx';
 import SuperAdminDashboard from './pages/SuperAdminDashboard.jsx';
 import UserManagement from './pages/UserManagement.jsx';
 import LoginForm from './components/LoginForm.jsx';
 import AdminProfile from './pages/admin/AdminProfile.jsx';
+import LecturerManagement from './pages/admin/LecturerManagement.jsx';
+import ClassesManagement from './pages/admin/ClassesManagement.jsx';
+import CoursesPage from './pages/admin/Courses.jsx';
+import CourseMappingPage from './pages/admin/CourseMapping.jsx';
 
 
 function App() {
@@ -23,7 +31,7 @@ function App() {
     checkAuth();
   }, [checkAuth]);
 
-  if (isCheckingAuth && !authUser) return (
+  if (isCheckingAuth) return (
     <div className="flex justify-center items-center h-screen">
       <Loader className="size-10 animate-spin" />
     </div>
@@ -36,8 +44,8 @@ function App() {
           {/* Default to login */}
           <Route path="/" element={<Navigate to="/login" replace />} />
 
-          {/* Public */}
-          <Route path="/login" element={!authUser ? <LoginForm /> : <Navigate to={`/${authUser.role}`} replace />} />
+          {/* Public login - if already authenticated, stay on current route (don't force redirect) */}
+          <Route path="/login" element={<LoginForm />} />
 
           {/* Superadmin */}
           <Route
@@ -70,16 +78,25 @@ function App() {
           <Route index element={<AdminHome />} />
             <Route path="recruitment" element={<Recruitment />} />
             <Route path="profile" element={<AdminProfile />} />
+            <Route path="lecturers" element={<LecturerManagement />} />
+              <Route path="classes" element={<ClassesManagement />} />
+            <Route path="courses" element={<CoursesPage />} />
+            <Route path="course-mapping" element={<CourseMappingPage />} />
           </Route>
 
           <Route
             path="/lecturer"
             element={
               <RequireRole allowed={["lecturer"]}>
-                <LecturerDashboard />
+                <LecturerDashboardLayout />
               </RequireRole>
             }
-          />
+          >
+            <Route index element={<LecturerDashboard />} />
+            <Route path="profile" element={<LecturerProfile />} />
+            <Route path="my-contracts" element={<LecturerContracts />} />
+          </Route>
+          <Route path="/onboarding" element={<Onboarding />} />
 
             <Route
               path="/management"
@@ -90,8 +107,8 @@ function App() {
               }
             />
 
-          {/* Fallback to login */}
-          <Route path="*" element={<Navigate to="/login" replace />} />
+          {/* Fallback: if authenticated, keep them where they are or send to role home; else go login */}
+          <Route path="*" element={authUser ? <Navigate to={`/${authUser.role}`} replace /> : <Navigate to="/login" replace />} />
         </Routes>
 
         <Toaster position="top-center" toastOptions={{ duration: 3000 }} />

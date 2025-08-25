@@ -3,67 +3,54 @@
 // import User from '../model/user.model.js';
 // import Candidate from '../model/candidate.model.js';
 
+import { User, Role, UserRole, LecturerProfile } from '../model/user.model.js';
+import { Op, Sequelize } from 'sequelize';
+
 /**
- * Get dashboard statistics
- * @route GET /api/dashboard/stats
- * @access Private (Super Admin only)
+ * GET /api/dashboard/stats
+ * Scopes data to the authenticated admin's department; superadmin sees global.
  */
 export const getDashboardStats = async (req, res) => {
   try {
-    // These are placeholders - replace with actual database queries 
-    // based on your schema and requirements
-    
-    // For demonstration, returning mock data
-    // In a real implementation, you would query your database
-    
-    // Example of how you might query total users:
-    // const totalUsers = await User.count();
-    
-    // Example of how you might query active lecturers:
-    // const activeLecturers = await Lecturer.count({ 
-    //   where: { status: 'active' } 
-    // });
-    
-    // Example of how you might query candidates in recruitment:
-    // const recruitmentCount = await Candidate.count({
-    //   where: { status: 'in_progress' }
-    // });
-    
-    res.status(200).json({
-      activeLecturers: { count: 142, change: 12 },
-      pendingContracts: { count: 8, change: -3 },
-      renewals: { count: 23, change: 5 },
-      recruitmentInProgress: { count: 15, change: 8 },
-      totalUsers: { count: 287, change: 15 },
-      recentActivities: [
-        { 
-          id: 1,
-          type: 'application', 
-          title: 'New lecturer application',
-          name: 'Dr. Sarah Johnson', 
-          time: '2 hours ago',
-          status: 'pending'
-        },
-        { 
-          id: 2,
-          type: 'contract', 
-          title: 'Contract signed',
-          name: 'Prof. Michael Chen', 
-          time: '4 hours ago',
-          status: 'completed'
-        },
-        { 
-          id: 3, 
-          type: 'interview',
-          title: 'Interview scheduled',
-          name: 'Dr. Emily Rodriguez', 
-          time: '1 day ago',
-          status: 'scheduled'
-        }
-      ]
-    });
+    const role = req.user.role?.toLowerCase();
+    const dept = req.user.department_name || null;
+    const isSuper = role === 'superadmin';
+
+    // Active lecturers count
+    const lecturerRole = await Role.findOne({ where: { role_type: 'lecturer' } });
+    let activeLecturersCount = 0;
+    if (lecturerRole) {
+      const whereUser = { status: 'active' };
+      if (!isSuper && dept) whereUser.department_name = dept;
+      activeLecturersCount = await User.count({
+        where: whereUser,
+        include: [{ model: Role, where: { role_type: 'lecturer' }, through: { attributes: [] }, required: true }]
+      });
+    }
+
+    // Total users (department scoped for admin)
+    const totalUsersWhere = !isSuper && dept ? { department_name: dept } : undefined;
+    const totalUsersCount = await User.count({ where: totalUsersWhere });
+
+    // Pending contracts / renewals / recruitment placeholders (scope-aware placeholders)
+    // TODO: Replace with real queries once contract & candidate tables exist.
+    const multiplier = isSuper ? 1 : 0.2; // smaller numbers for a single department view
+    const randomize = (base) => Math.round(base * multiplier);
+
+    const data = {
+      scope: isSuper ? 'global' : 'department',
+      department: isSuper ? null : dept,
+      activeLecturers: { count: activeLecturersCount, change: 0 },
+      pendingContracts: { count: randomize(40), change: 0 },
+      renewals: { count: randomize(30), change: 0 },
+      recruitmentInProgress: { count: randomize(25), change: 0 },
+      totalUsers: { count: totalUsersCount, change: 0 },
+      recentActivities: []
+    };
+
+    return res.status(200).json(data);
   } catch (error) {
-    console.error('Dashboard stats error:', error);
-    res.status(500).json({ message: 'Error fetching dashboard statistics' });
+    console.error('Dashboard stats error:', error.message, error.stack);
+    return res.status(500).json({ message: 'Error fetching dashboard statistics' });
   }
 };

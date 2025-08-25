@@ -13,7 +13,7 @@ export default function AdminHome() {
     totalUsers: { count: 0, change: 0 },
     recentActivities: []
   });
-  const [isLoading, setIsLoading] = useState(true);
+  const [ , setIsLoading] = useState(true);
 
   useEffect(() => {
     const fetchDashboardData = async () => {

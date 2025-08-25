@@ -1,6 +1,18 @@
 import bcrypt from 'bcrypt';
 import User from '../model/user.model.js';
 
+// Helper to generate a readable name from email prefix if no display_name stored
+function fallbackName(email, role) {
+  if (!email) return null;
+  let base = email.split('@')[0].replace(/[._-]+/g, ' ');
+  base = base
+    .split(' ')
+    .filter(Boolean)
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
+  return base || null;
+}
+
 // GET /api/profile/me
 export const getMyProfile = async (req, res) => {
   try {
@@ -9,7 +21,7 @@ export const getMyProfile = async (req, res) => {
     return res.json({
       id: user.id,
       email: user.email,
-      fullName: user.display_name || null,
+      fullName: user.display_name || fallbackName(user.email, req.user.role) || null,
       department: user.department_name || null,
       role: req.user.role,
       createdAt: user.created_at,

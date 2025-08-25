@@ -16,7 +16,13 @@ export const protect = async (req, res, next) => {
     const user = await User.findByPk(resolvedId);
     if (!user) return res.status(401).json({ message: 'Account not found' });
     if (user.status !== 'active') return res.status(401).json({ message: 'Account deactivated' });
-    req.user = { id: resolvedId, role };
+    // Enrich req.user with commonly needed fields (department for inheritance, display name if needed)
+    req.user = { 
+      id: resolvedId, 
+      role, 
+      department_name: user.department_name || null,
+      display_name: user.display_name || null
+    };
     next();
   } catch (e) {
     return res.status(401).json({ message: 'Invalid token' });

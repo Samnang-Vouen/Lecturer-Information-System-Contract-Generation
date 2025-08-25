@@ -14,10 +14,8 @@ const Candidate = sequelize.define('Candidate', {
     email: {
         type: DataTypes.STRING(255),
         allowNull: false,
-        unique: true,
-        validate: {
-        isEmail: true,
-        },
+        // Removed 'unique: true' to avoid accumulating duplicate indexes during alter sync.
+        validate: { isEmail: true },
     },
     phone: {
         type: DataTypes.STRING(50),
@@ -54,6 +52,10 @@ const Candidate = sequelize.define('Candidate', {
     },
     evaluator: {
         type: DataTypes.STRING(255),
+        allowNull: true,
+    },
+    dept_id: {
+        type: DataTypes.INTEGER,
         allowNull: true,
     },
 }, {

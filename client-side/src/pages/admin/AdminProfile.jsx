@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuthStore } from '../../store/useAuthStore.js';
 import { axiosInstance } from '../../lib/axios.js';
-import { UserCircle, Clock, KeyRound } from 'lucide-react';
+import { UserCircle, Clock, KeyRound, Eye, EyeOff } from 'lucide-react';
 import Button from '../../components/ui/Button.jsx';
 import Input from '../../components/ui/Input.jsx';
 import toast from 'react-hot-toast';
@@ -30,12 +30,13 @@ function durationFrom(start) {
 }
 
 export default function AdminProfile() {
-  const { authUser } = useAuthStore();
+  const { authUser: _authUser } = useAuthStore();
   const [profile, setProfile] = useState(null);
   const [activity, setActivity] = useState(null);
   const [loading, setLoading] = useState(true);
   const [pwLoading, setPwLoading] = useState(false);
   const [form, setForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [showPw, setShowPw] = useState({ current: false, new: false, confirm: false });
 
   useEffect(() => {
     const load = async () => {
@@ -132,15 +133,67 @@ export default function AdminProfile() {
             <form onSubmit={submitPassword} className='space-y-4'>
               <div>
                 <label className='block text-sm font-medium text-gray-700 mb-1'>Current Password</label>
-                <Input name='currentPassword' type='password' value={form.currentPassword} onChange={onChange} placeholder='••••••••' />
+                <div className='relative'>
+                  <Input
+                    name='currentPassword'
+                    type={showPw.current ? 'text' : 'password'}
+                    value={form.currentPassword}
+                    onChange={onChange}
+                    placeholder='••••••••'
+                    className='pr-10'
+                  />
+                  <button
+                    type='button'
+                    onClick={() => setShowPw(s => ({ ...s, current: !s.current }))}
+                    className='absolute inset-y-0 right-0 px-2 flex items-center text-gray-500 hover:text-gray-700'
+                    aria-label={showPw.current ? 'Hide current password' : 'Show current password'}
+                    tabIndex={0}
+                  >
+                    {showPw.current ? <EyeOff className='w-5 h-5' /> : <Eye className='w-5 h-5' />}
+                  </button>
+                </div>
               </div>
               <div>
                 <label className='block text-sm font-medium text-gray-700 mb-1'>New Password</label>
-                <Input name='newPassword' type='password' value={form.newPassword} onChange={onChange} placeholder='At least 6 characters' />
+                <div className='relative'>
+                  <Input
+                    name='newPassword'
+                    type={showPw.new ? 'text' : 'password'}
+                    value={form.newPassword}
+                    onChange={onChange}
+                    placeholder='At least 6 characters'
+                    className='pr-10'
+                  />
+                  <button
+                    type='button'
+                    onClick={() => setShowPw(s => ({ ...s, new: !s.new }))}
+                    className='absolute inset-y-0 right-0 px-2 flex items-center text-gray-500 hover:text-gray-700'
+                    aria-label={showPw.new ? 'Hide new password' : 'Show new password'}
+                  >
+                    {showPw.new ? <EyeOff className='w-5 h-5' /> : <Eye className='w-5 h-5' />}
+                  </button>
+                </div>
               </div>
               <div>
                 <label className='block text-sm font-medium text-gray-700 mb-1'>Confirm New Password</label>
-                <Input name='confirmPassword' type='password' value={form.confirmPassword} onChange={onChange} placeholder='Repeat new password' />
+                <div className='relative'>
+                  <Input
+                    name='confirmPassword'
+                    type={showPw.confirm ? 'text' : 'password'}
+                    value={form.confirmPassword}
+                    onChange={onChange}
+                    placeholder='Repeat new password'
+                    className='pr-10'
+                  />
+                  <button
+                    type='button'
+                    onClick={() => setShowPw(s => ({ ...s, confirm: !s.confirm }))}
+                    className='absolute inset-y-0 right-0 px-2 flex items-center text-gray-500 hover:text-gray-700'
+                    aria-label={showPw.confirm ? 'Hide confirm password' : 'Show confirm password'}
+                  >
+                    {showPw.confirm ? <EyeOff className='w-5 h-5' /> : <Eye className='w-5 h-5' />}
+                  </button>
+                </div>
               </div>
               <Button disabled={pwLoading} type='submit' variant='primary' className='w-full'>
                 {pwLoading ? 'Updating...' : 'Update Password'}

@@ -67,7 +67,7 @@ export default function UserManagement() {
         try {
             setIsLoading(true);
             const params = { page, limit };
-            if (selectedRole !== 'all') params.role = selectedRole;
+            if (selectedRole !== 'all' && ['admin','management','superadmin'].includes(selectedRole)) params.role = selectedRole;
             if (selectedDepartment !== 'all') params.department = selectedDepartment;
             if (searchQuery) params.search = searchQuery;
             const response = await axiosInstance.get('/users', { params });
@@ -171,12 +171,15 @@ export default function UserManagement() {
         if (!editingUser) return;
         try {
         const payloadRole = editForm.role.trim().toLowerCase();
-        await axiosInstance.put(`/users/${editingUser.id}`, { fullName: editForm.name, email: editForm.email, role: payloadRole, department: editForm.department });
-        // Refetch users to reflect persisted backend state
-        const refreshed = await axiosInstance.get('/users');
-        setUsers(refreshed.data);
-        setIsEditModalOpen(false);
-        setEditingUser(null);
+    await axiosInstance.put(`/users/${editingUser.id}`, { fullName: editForm.name, email: editForm.email, role: payloadRole, department: editForm.department });
+    // Refetch users to reflect persisted backend state
+    const refreshed = await axiosInstance.get('/users');
+    // Some endpoints wrap data as { data: [...], meta: {...} }
+    const refreshedPayload = refreshed.data;
+    const refreshedList = Array.isArray(refreshedPayload) ? refreshedPayload : refreshedPayload.data;
+    setUsers(Array.isArray(refreshedList) ? refreshedList : []);
+    setIsEditModalOpen(false);
+    setEditingUser(null);
         } catch (e) { console.error('Update failed', e); }
     };
 
@@ -232,9 +235,9 @@ export default function UserManagement() {
                     <div className="w-full md:w-48">
                     <Select value={selectedRole} onValueChange={setSelectedRole} placeholder="Role">
                         <SelectItem value="all">All Roles</SelectItem>
-                        <SelectItem value="superadmin">Super Admin</SelectItem>
                         <SelectItem value="admin">Admin</SelectItem>
                         <SelectItem value="management">Management</SelectItem>
+                        <SelectItem value="superadmin">Super Admin</SelectItem>
                     </Select>
                     </div>
                     <div className="w-full md:w-60">

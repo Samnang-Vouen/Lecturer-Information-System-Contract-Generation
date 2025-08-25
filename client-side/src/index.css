@@ -9,6 +9,20 @@ body { @apply bg-gray-50 text-gray-800 min-h-screen; }
 input, textarea, select { color: #000; }
 /* Lighter placeholder */
 input::placeholder, textarea::placeholder { color: #9ca3af; opacity: .4; }
+/* Force white background for all inputs (including WebKit inner area & spin buttons) */
+input, textarea, select { background-color:#fff; }
+input[type=number] { background-color:#fff; }
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button { background:#fff; }
+/* Firefox number input spinner removal fallback */
+input[type=number] { -moz-appearance:textfield; appearance: textfield; }
+/* Force light UI for native number spinners (Chrome/Edge sometimes shows dark background) */
+input[type=number] { color-scheme: light; }
+/* If you prefer to HIDE the spinner entirely (uncomment below) */
+/*
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin:0; }
+*/
 /* Chrome autofill */
 input:-webkit-autofill, textarea:-webkit-autofill, select:-webkit-autofill {
 	-webkit-text-fill-color: #000 !important;

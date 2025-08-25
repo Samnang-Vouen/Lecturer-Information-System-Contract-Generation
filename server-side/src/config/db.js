@@ -10,6 +10,7 @@ const sequelize = new Sequelize(
     host: process.env.DATABASE_HOST,
     port: process.env.DATABASE_PORT,
     dialect: process.env.DATABASE_DIALECT || 'mysql',
+    logging: process.env.SQL_LOG === 'true' ? (msg) => console.log('[SQL]', msg) : false
   }
 );
 

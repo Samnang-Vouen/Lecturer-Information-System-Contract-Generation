@@ -17,7 +17,8 @@ export default function SuperAdminDashboard() {
     totalUsers: { count: 0, change: 0 },
     recentActivities: []
   });
-  const [isLoading, setIsLoading] = useState(true);
+  // isLoading state not used; keep fetch control via setDashboardData and local flags
+  const [ , setIsLoading] = useState(true);
 
   useEffect(() => {
     const fetchDashboardData = async () => {

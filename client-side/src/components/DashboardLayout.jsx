@@ -1,7 +1,9 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import LoginForm from "./LoginForm";
+import { useAuthStore } from "../store/useAuthStore";
+import { Menu } from 'lucide-react';
 
 /**
  * Dashboard layout component that handles authentication state and layout
@@ -16,23 +18,20 @@ import LoginForm from "./LoginForm";
  * @param {Function} [props.logout] - Logout function
  * @returns {React.ReactElement}
  */
-export function DashboardLayout({ 
-    children, 
-    user, 
-    isLoading = false, 
-    logout 
-}) {
+export function DashboardLayout({ children }) {
     const navigate = useNavigate();
+    const { authUser, isCheckingAuth, logout } = useAuthStore();
+    const [mobileOpen, setMobileOpen] = useState(false);
     
     useEffect(() => {
         // Redirect lecturer on first login to onboarding
-        if (!isLoading && user?.isFirstLogin && user.role === "lecturer") {
+        if (!isCheckingAuth && authUser?.isFirstLogin && authUser.role === "lecturer") {
         navigate("/onboarding");
         }
-    }, [user, isLoading, navigate]);
+    }, [authUser, isCheckingAuth, navigate]);
 
     // Show loading spinner
-    if (isLoading) {
+    if (isCheckingAuth) {
         return (
         <div className="min-h-screen flex items-center justify-center">
             <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
@@ -41,15 +40,26 @@ export function DashboardLayout({
     }
 
     // Show login form if not authenticated
-    if (!user) {
+    if (!authUser) {
         return <LoginForm />;
     }
 
     // Show dashboard with sidebar
     return (
         <div className="flex h-screen bg-gray-50">
-        <Sidebar user={user} onLogout={logout} />
-        <main className="flex-1 overflow-auto">{children}</main>
+        <Sidebar user={authUser} onLogout={logout} mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
+                <main className="flex-1 overflow-auto">
+                    {/* Mobile header: hamburger to open mobile sidebar */}
+                    <div className="md:hidden bg-white border-b">
+                        <div className="flex items-center p-3">
+                            <button aria-label="Open menu" onClick={() => setMobileOpen(true)} className="p-2 rounded hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <Menu className="w-6 h-6 text-gray-700" />
+                            </button>
+                            <div className="ml-3 font-semibold text-gray-800">LCMS</div>
+                        </div>
+                    </div>
+                    {children}
+                </main>
         </div>
     );
 }

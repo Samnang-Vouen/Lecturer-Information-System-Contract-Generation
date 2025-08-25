@@ -1,12 +1,14 @@
 import React, { useState } from "react";
 import { Building2, Loader2, Eye, EyeOff } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useAuthStore } from '../store/useAuthStore.js';
 import Button from "./ui/Button.jsx";
 import Input from "./ui/Input.jsx";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "./ui/Card.jsx";
 
 export default function LoginForm() {
+    // Central email regex (case-insensitive) – keep simple to avoid HTML pattern quirks
+    const EMAIL_REGEX = /^[A-Za-z0-9._%+-]+@cadt\.edu\.kh$/i;
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
@@ -14,13 +16,15 @@ export default function LoginForm() {
     const [fieldErrors, setFieldErrors] = useState({ email: '', password: '' });
     const navigate = useNavigate();
     const { login, isLoggingIn } = useAuthStore();
+    const location = useLocation();
+    const from = location.state?.from || null;
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError("");
         const trimmedEmail = email.trim().toLowerCase();
         const trimmedPassword = password.trim();
-        const emailPattern = /^[a-zA-Z0-9._%+-]+@cadt\.edu\.kh$/;
+    const emailPattern = EMAIL_REGEX;
         if (!trimmedEmail || !trimmedPassword) {
             setError("Email and password are required");
             return;
@@ -36,12 +40,13 @@ export default function LoginForm() {
         try {
             const res = await login({ email: trimmedEmail, password: trimmedPassword });
             const role = res?.user?.role || res?.role;
-            if (role === 'superadmin') {
-                navigate('/superadmin', { replace: true });
-            } else if (role === 'admin') {
-                navigate('/admin', { replace: true });
-            } else if (role) {
-                navigate(`/${role}` , { replace: true });
+            // If we came from a protected route, go back there
+            if (from) {
+                navigate(from, { replace: true });
+                return;
+            }
+            if (role) {
+                navigate(`/${role}`, { replace: true });
             } else {
                 setError('Unauthorized');
             }
@@ -71,15 +76,15 @@ export default function LoginForm() {
                     onChange={(e) => {
                         const val = e.target.value;
                         setEmail(val);
-                        const pattern = /^[a-zA-Z0-9._%+-]+@cadt\.edu\.kh$/;
-                        setFieldErrors(fe => ({ ...fe, email: val && !pattern.test(val.toLowerCase()) ? 'Email must be in the format youremail@cadt.edu.kh' : '' }));
+                        setFieldErrors(fe => ({ ...fe, email: val && !EMAIL_REGEX.test(val.toLowerCase()) ? 'Email must be in the format youremail@cadt.edu.kh' : '' }));
                         // Clear submit-level error if user is fixing
                         if (error) setError('');
                     }}
                     placeholder="youremail@cadt.edu.kh"
                     className="placeholder-gray-600 placeholder-opacity-90"
                     required
-                    pattern="^[a-zA-Z0-9._%+-]+@cadt\\.edu\\.kh$"
+                    // Use regex source to avoid accidental escaping / unsupported flags issues
+                    pattern={EMAIL_REGEX.source}
                     title="Email must be in the format youremail@cadt.edu.kh"
                 />
                 {fieldErrors.email && <p className="text-xs text-red-600" role="alert">{fieldErrors.email}</p>}
@@ -129,13 +134,6 @@ export default function LoginForm() {
                 )}
                 </Button>
             </form>
-            <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-                <p className="text-sm font-medium text-gray-700 mb-2">Demo Credentials:</p>
-                <div className="text-xs text-gray-600 space-y-1">
-                <p>Super Admin: superadmin@cadt.edu.kh</p>
-                <p className="font-medium">Password: 12345678</p>
-                </div>
-            </div>
             </CardContent>
         </Card>
         </div>

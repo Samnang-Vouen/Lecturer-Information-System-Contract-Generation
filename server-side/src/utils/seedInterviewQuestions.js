@@ -1,7 +1,8 @@
 import { InterviewQuestion } from '../model/interviewQuestion.model.js';
+import { Op } from 'sequelize';
 
 const seedData = {
-  'Academic & Professional Background': [
+  /* 'Academic & Professional Background': [
     'Can you tell us about your educational qualifications and areas of expertise?',
     'What research or publications have you been involved in?',
     'How have your past teaching experiences prepared you for this role?'
@@ -32,7 +33,7 @@ const seedData = {
     'How do you work with other faculty members to improve courses?',
     'How can you contribute to the department outside of teaching?',
     'Are you open to mentoring students or leading student clubs/projects?'
-  ],
+  ], */
   'Adaptability & Problem-Solving': [
     'How do you adapt when a lesson isn’t going as planned?',
     'Tell us about a time you had to deal with a difficult student or classroom challenge.',
@@ -45,11 +46,35 @@ const seedData = {
   ]
 };
 
+// Export the currently active (uncommented) categories so API can filter
+export const activeInterviewCategories = Object.keys(seedData);
+
 export async function seedInterviewQuestions() {
+  if (process.env.SEED_INTERVIEW_QUESTIONS !== 'true') return; // fast skip
+  const activeCategories = Object.keys(seedData);
+  const existingCount = await InterviewQuestion.count();
+  if (existingCount && process.env.SEED_FORCE !== 'true') {
+    console.log(`[seedInterviewQuestions] Skip (already have ${existingCount} records).`);
+    return;
+  }
+  if (existingCount && process.env.SEED_FORCE === 'true') {
+    await InterviewQuestion.destroy({ where: {} });
+    console.log('[seedInterviewQuestions] Cleared existing questions (SEED_FORCE=true)');
+  }
+  if (process.env.CLEAN_INTERVIEW_QUESTIONS === 'true') {
+    const deleted = await InterviewQuestion.destroy({ where: { category: { [Op.notIn]: activeCategories } } });
+    if (deleted) console.log(`[seedInterviewQuestions] Removed ${deleted} outdated questions`);
+  }
+  let inserted = 0;
   for (const [category, questions] of Object.entries(seedData)) {
     for (const text of questions) {
-      await InterviewQuestion.findOrCreate({ where: { question_text: text, category }, defaults: { question_text: text, category } });
+      const canonical = text.toLowerCase().trim().replace(/\s+/g,' ');
+      const [rec, created] = await InterviewQuestion.findOrCreate({
+        where: { canonical_text: canonical, category },
+        defaults: { question_text: text, canonical_text: canonical, category, is_default: true, is_custom: false }
+      });
+      if (created) inserted++;
     }
   }
-  console.log('Interview questions seeded');
+  console.log(`[seedInterviewQuestions] Done. Inserted ${inserted}. Total now ${await InterviewQuestion.count()}`);
 }

@@ -1,4 +1,4 @@
-import User, { Role, UserRole } from '../model/user.model.js';
+import User, { Role, UserRole, LecturerProfile } from '../model/user.model.js';
 import { generateToken } from '../config/utils.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
@@ -20,8 +20,8 @@ export const login = async (req, res) => {
 
     console.log('Login attempt', email);
 
-    // Find user
-    let user = await User.findOne({ where: { email } });
+  // Find user
+  let user = await User.findOne({ where: { email } });
 
     // Bootstrap superadmin if not present
     if (!user && email === 'superadmin@cadt.edu.kh') {
@@ -29,16 +29,14 @@ export const login = async (req, res) => {
         return res.status(401).json({ success:false, message:'Invalid credentials' });
       }
       const hashed = await bcrypt.hash(password, 10);
-      user = await User.create({ email, password_hash: hashed, display_name: 'Super Admin' });
+      user = await User.create({ email, password_hash: hashed, display_name: 'Super Admin', status: 'active' });
       console.log('Bootstrapped superadmin user id', user.id);
     }
 
     if (!user) {
       return res.status(401).json({ success:false, message:'Invalid credentials' });
     }
-    if (user.status !== 'active') {
-      return res.status(401).json({ success:false, message:'Account deactivated' });
-    }
+  // NOTE: Status gating moved after password + role determination to allow first-login activation for lecturers
 
     // Password verification (supports legacy plaintext -> auto-migrate to bcrypt)
     const stored = (user.password_hash || '').trim(); // mapped column 'password'
@@ -83,15 +81,38 @@ export const login = async (req, res) => {
       if (email === 'superadmin@cadt.edu.kh') roleName = 'superadmin';
     }
 
-    await user.update({ last_login: new Date() });
+    let justActivated = false;
+    if (user.status !== 'active') {
+      if (roleName === 'lecturer') {
+        // First successful login for lecturer: activate account & lecturer profile
+        try {
+          await user.update({ status: 'active', last_login: new Date() });
+          const lp = await LecturerProfile.findOne({ where: { user_id: user.id } });
+          if (lp && lp.status !== 'active') {
+            await lp.update({ status: 'active' });
+          }
+          justActivated = true;
+          console.log(`[AUTH] Auto-activated lecturer user ${user.id} (${user.email}) on first login`);
+        } catch (actErr) {
+          console.error('Failed to auto-activate lecturer on first login', actErr.message);
+          return res.status(500).json({ success:false, message:'Activation failed' });
+        }
+      } else {
+        return res.status(401).json({ success:false, message:'Account deactivated' });
+      }
+    } else {
+      await user.update({ last_login: new Date() });
+    }
+
     generateToken(user, res, roleName);
-    return res.json({ success:true, user: { 
+    return res.json({ success:true, justActivated, user: { 
       id: user.id, 
       email: user.email, 
       role: roleName, 
       fullName: user.display_name || null, 
       department: user.department_name || null,
-      lastLogin: user.last_login
+      lastLogin: user.last_login,
+      status: user.status
     }});
   } catch (e) {
     console.error('Login error', e.message, e.stack);
@@ -150,7 +171,7 @@ export const checkAuth = async (req, res) => {
 };
 
 // Allow superadmin to change password later
-export const changeSuperadminPassword = async (req, res) => {
+/* export const changeSuperadminPassword = async (req, res) => {
   try {
     const { oldPassword, newPassword } = req.body;
     if (!newPassword || newPassword.length < 6) {
@@ -185,4 +206,4 @@ export const changeSuperadminPassword = async (req, res) => {
     console.error('changeSuperadminPassword error', e);
     return res.status(500).json({ message: 'Server error' });
   }
-};
+}; */

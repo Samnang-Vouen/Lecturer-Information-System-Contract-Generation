@@ -1,16 +1,19 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuthStore } from "../store/useAuthStore";
 import Button from "./ui/Button.jsx";
 import { 
-    LayoutDashboard, 
-    Users, 
-    FileText, 
-    LogOut, 
-    Building2, 
-    UserCheck,
-    PanelRightClose,
-    PanelRightOpen
+  LayoutDashboard, 
+  Users, 
+  UserPlus,
+  FileText, 
+  LogOut, 
+  Building2, 
+  UserCheck,
+  PanelRightClose,
+  PanelRightOpen,
+  BookOpen,
+  School
 } from "lucide-react";
 
 /**
@@ -40,9 +43,33 @@ const navItems = [
     roles: ["admin"],
   },
   {
+    title: "Courses Creation",
+    href: "/admin/courses",
+    icon: BookOpen,
+    roles: ["admin"],
+  },
+  {
+    title: "Classes Management",
+    href: "/admin/classes",
+    icon: School,
+    roles: ["admin"],
+  },
+  {
     title: "Recruitment",
     href: "/admin/recruitment",
+    icon: UserPlus,
+    roles: ["admin"],
+  },
+  {
+    title: "Lecturer Management",
+    href: "/admin/lecturers",
     icon: Users,
+    roles: ["admin"],
+  },
+  {
+    title: "Course Mapping",
+    href: "/admin/course-mapping",
+    icon: BookOpen,
     roles: ["admin"],
   },
   {
@@ -53,13 +80,13 @@ const navItems = [
   },
   {
     title: "My Profile",
-    href: "/profile",
+    href: "/lecturer/profile",
     icon: UserCheck,
     roles: ["lecturer"],
   },
   {
     title: "My Contracts",
-    href: "/my-contracts",
+  href: "/lecturer/my-contracts",
     icon: FileText,
     roles: ["lecturer"],
   },
@@ -73,20 +100,22 @@ const navItems = [
  * @param {string} props.user.name - User name
  * @param {UserRole} props.user.role - User role
  * @param {Function} [props.onLogout] - Logout function
+ * @param {boolean} [props.mobileOpen] - If true, show mobile overlay
+ * @param {Function} [props.onClose] - Close handler for mobile overlay
  * @returns {React.ReactElement|null}
  */
-export function Sidebar({ user: userProp, onLogout }) {
+export function Sidebar({ user: userProp, onLogout, mobileOpen = false, onClose = () => {} }) {
   const location = useLocation();
   const { user: storeUser, logout: storeLogout } = useAuthStore();
   // Initialize from localStorage immediately to avoid post-mount state flip animation on route changes
   const [collapsed, setCollapsed] = useState(() => {
-    try { return localStorage.getItem('sidebarCollapsed') === 'true'; } catch { return false; }
+    try { return localStorage.getItem('sidebarCollapsed') === 'true'; } catch { /* ignore read errors (e.g., SSR) */ return false; }
   });
 
   const toggleCollapsed = () => {
     setCollapsed(prev => {
       const next = !prev;
-      try { localStorage.setItem('sidebarCollapsed', String(next)); } catch {}
+      try { localStorage.setItem('sidebarCollapsed', String(next)); } catch { /* ignore write errors */ }
       return next;
     });
   };
@@ -94,7 +123,15 @@ export function Sidebar({ user: userProp, onLogout }) {
   // Use provided user from props (SSR) or fallback to client-side context
   const user = userProp || storeUser;
   const logout = onLogout || storeLogout;
-  
+  // Close on escape when mobile open (hook must be declared unconditionally)
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape' && mobileOpen) onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [mobileOpen, onClose]);
+
   // Don't render sidebar if no user
   if (!user) return null;
 
@@ -112,9 +149,27 @@ export function Sidebar({ user: userProp, onLogout }) {
   // Helper for classnames concatenation
   const cn = (...classes) => classes.filter(Boolean).join(' ');
 
-  return (
-    <div className={`flex h-full ${collapsed ? 'w-20' : 'w-64'} flex-col bg-white border-r border-gray-200 transition-[width] duration-300 ease-in-out`}> 
-      <div className={`flex h-16 items-center ${collapsed ? 'justify-center px-0' : 'px-4'} border-b border-gray-200 transition-all duration-300 gap-2`}> 
+  // Format email prefix like "cs.department" -> "Cs Department" and append role if admin
+  const formatUserDisplay = (u) => {
+    if (!u?.email) return '';
+    let base = u.email.split('@')[0].replace(/[._-]+/g, ' ');
+    base = base
+      .split(' ')
+      .filter(Boolean)
+      .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+      .join(' ');
+    if (u.role === 'admin' && !/admin$/i.test(base)) {
+      base += ' Admin';
+    }
+    return base;
+  };
+
+  // NOTE: duplicate escape handler removed earlier to satisfy React Hooks rule
+
+  // Desktop persistent sidebar (hidden on small screens)
+  const desktopSidebar = (
+    <div className={`hidden md:flex h-full ${collapsed ? 'w-20' : 'w-64'} flex-col bg-white border-r border-gray-200 transition-[width] duration-300 ease-in-out`}>
+      <div className={`flex h-16 items-center ${collapsed ? 'justify-center px-0' : 'px-4'} border-b border-gray-200 transition-all duration-300 gap-2`}>
         {!collapsed && (
           <>
             <Building2 className="h-8 w-8 text-blue-600 flex-shrink-0 transition-opacity duration-300" />
@@ -149,10 +204,10 @@ export function Sidebar({ user: userProp, onLogout }) {
           <p className='text-gray-600 mb-6'>
             Welcome back,<br/>
             <span className='font-semibold text-gray-900'>
-              {user.fullName || user.name || (user.email ? user.email.split('@')[0] : '')}
+              {formatUserDisplay(user)}
             </span><br/>
             <span className='capitalize text-blue-600'>
-              admin{user.department ? `, ${user.department}` : ''}
+              {user.department ? ` ${user.department}` : ''}
             </span>
           </p>
         )}
@@ -185,7 +240,10 @@ export function Sidebar({ user: userProp, onLogout }) {
                     <Icon className={cn("h-4 w-4", active ? "text-white" : "text-gray-600 group-hover:text-gray-900")} />
                   </span>
                   {!collapsed && (
-                    <span className={cn(active ? "text-white" : "text-gray-700 group-hover:text-gray-900", "transition-opacity duration-200")}>{item.title}</span>
+                    <span className={cn(
+                      active ? "text-white" : "text-gray-700 group-hover:text-gray-900",
+                      "transition-opacity duration-200 flex-1 text-left whitespace-nowrap"
+                    )}>{item.title}</span>
                   )}
                 </Button>
               </Link>
@@ -210,4 +268,82 @@ export function Sidebar({ user: userProp, onLogout }) {
       </div>
     </div>
   );
+
+  // Mobile overlay sidebar (visible when mobileOpen is true)
+  const mobileSidebar = (
+    <>
+      {/* Backdrop */}
+      <div className={`fixed inset-0 bg-black/40 z-40 transition-opacity ${mobileOpen ? 'opacity-100 block' : 'opacity-0 pointer-events-none hidden'}`} onClick={onClose} aria-hidden />
+      <div className={`fixed inset-y-0 left-0 z-50 w-64 transform bg-white border-r border-gray-200 transition-transform duration-300 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`} role="dialog" aria-modal={mobileOpen}>
+        <div className="flex h-16 items-center px-4 border-b border-gray-200">
+          <div className="flex items-center gap-2">
+            <Building2 className="h-8 w-8 text-blue-600 flex-shrink-0" />
+            <span className="text-lg font-semibold text-gray-900">LCMS</span>
+          </div>
+          <button onClick={onClose} className="ml-auto p-2 rounded text-gray-600 hover:text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500">Close</button>
+        </div>
+        <div className="px-4 py-6 overflow-y-auto h-[calc(100vh-4rem)]">
+          <p className='text-gray-600 mb-6'>
+            Welcome back,<br/>
+            <span className='font-semibold text-gray-900'>
+              {formatUserDisplay(user)}
+            </span><br/>
+            <span className='capitalize text-blue-600'>
+              {user.department ? ` ${user.department}` : ''}
+            </span>
+          </p>
+          <nav className="space-y-2">
+            {filteredNavItems.map((item) => {
+              const Icon = item.icon;
+              let href = item.href;
+              if (item.title === 'Dashboard') {
+                const roleRoot = {
+                  superadmin: '/superadmin',
+                  admin: '/admin',
+                  lecturer: '/lecturer',
+                  management: '/management'
+                }[user.role] || '/dashboard';
+                href = roleRoot;
+              }
+              const active = isActive(href, item.title);
+              return (
+                <Link key={item.title} to={href} className="block" onClick={onClose}>
+                  <Button
+                    variant={active ? "primary" : "outline"}
+                    className={cn(
+                      "w-full transition-colors flex items-center gap-3 px-4 py-2 text-sm font-medium overflow-hidden justify-start",
+                      active ? "bg-blue-600 text-white hover:bg-blue-600" : "text-gray-700 hover:bg-gray-100"
+                    )}
+                  >
+                    <span className="w-5 flex justify-center">
+                      <Icon className={cn("h-4 w-4", active ? "text-white" : "text-gray-600 group-hover:text-gray-900")} />
+                    </span>
+                    <span className={cn(
+                      active ? "text-white" : "text-gray-700 group-hover:text-gray-900",
+                      "transition-opacity duration-200 flex-1 text-left whitespace-nowrap"
+                    )}>{item.title}</span>
+                  </Button>
+                </Link>
+              );
+            })}
+          </nav>
+        </div>
+        <div className="p-4 border-t border-gray-200">
+          <Button variant="outline" className="w-full text-red-600 hover:text-red-700 hover:bg-red-50 flex items-center" onClick={() => { onClose(); logout(); }}>
+            <LogOut className="h-4 w-4" />
+            <span className="ml-3">Sign Out</span>
+          </Button>
+        </div>
+      </div>
+    </>
+  );
+
+  return (
+    <>
+      {desktopSidebar}
+      {mobileSidebar}
+    </>
+  );
 }
+
+// Course Mapping page link already added earlier; ensure route exists in router configuration.

@@ -5,7 +5,8 @@ import toast from 'react-hot-toast';
 export const useAuthStore = create((set) => ({
     authUser: null,
     isLoggingIn: false,
-    isCheckingAuth: false,
+    // Start in checking state so protected routes don't redirect before auth status known
+    isCheckingAuth: true,
     error: null,
 
     checkAuth: async () => {
