@@ -16,7 +16,17 @@ import classRoutes from './route/class.route.js';
 import courseRoutes from './route/course.route.js';
 import catalogRoutes from './route/catalog.route.js';
 import courseMappingRoutes from './route/courseMapping.route.js';
+import researchFieldRoutes from './route/researchField.route.js';
+import universityRoutes from './route/university.route.js';
+import majorRoutes from './route/major.route.js';
 import { seedInterviewQuestions } from './utils/seedInterviewQuestions.js';
+import { seedResearchFields } from './utils/seedResearchFields.js';
+import { seedUniversities } from './utils/seedUniversities.js';
+import { seedMajors } from './utils/seedMajors.js';
+// Import models to ensure they are loaded
+import './model/researchField.model.js';
+import './model/university.model.js';
+import './model/major.model.js';
 import swaggerUi from 'swagger-ui-express';
 import fs from 'fs';
 import path from 'path';
@@ -47,6 +57,9 @@ app.use('/api/classes', classRoutes);
 app.use('/api/courses', courseRoutes);
 app.use('/api/catalog', catalogRoutes);
 app.use('/api/course-mappings', courseMappingRoutes);
+app.use('/api/research-fields', researchFieldRoutes);
+app.use('/api/universities', universityRoutes);
+app.use('/api/majors', majorRoutes);
 // Serve uploaded lecturer files (CVs, syllabi)
 app.use('/uploads', express.static('uploads'));
 // Swagger/OpenAPI docs
@@ -146,6 +159,10 @@ app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
     const FORCE_SYNC = process.env.DB_FORCE_SYNC === 'true';
     const syncOptions = {};
 
+    if (!ALTER_SYNC && process.env.NODE_ENV === 'production') {
+      ALTER_SYNC = true; // In production, default to ALTER to keep schema updated
+      console.log('[startup] DB_ALTER_SYNC not set, defaulting to true in production');
+    }
     if (FORCE_SYNC) {
       syncOptions.force = true;
       console.warn('[startup] FORCE sync enabled (dropping & recreating tables)');
@@ -165,6 +182,9 @@ app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
     }
 
     await seedInterviewQuestions(); // seeder has its own flag checks
+    await seedResearchFields(); // seed research fields if empty
+    await seedUniversities(); // seed universities if empty
+    await seedMajors(); // seed majors if empty
 
     app.listen(PORT, () => console.log(`Server listening on ${PORT} (fastMode=${!ALTER_SYNC && !FORCE_SYNC})`));
   } catch (e) {
