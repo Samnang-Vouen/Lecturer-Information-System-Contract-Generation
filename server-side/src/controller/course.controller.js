@@ -1,4 +1,4 @@
-import { Department } from '../model/user.model.js';
+import { Department } from '../model/index.js';
 import Course from '../model/course.model.js';
 
 function validateCourse(body){

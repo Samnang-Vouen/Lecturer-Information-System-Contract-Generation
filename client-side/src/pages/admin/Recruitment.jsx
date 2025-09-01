@@ -1,9 +1,12 @@
 import React, { useEffect, useState, useRef } from 'react';
 import dayjs from 'dayjs';
+import PhoneInput from 'react-phone-input-2';
+import 'react-phone-input-2/lib/style.css';
+import { isValidPhoneNumber } from 'libphonenumber-js';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
-import { Plus, Star, MessageCircle, DollarSign, CheckCircle, XCircle, User, GraduationCap, Clock, AlertCircle, Edit2, Trash2, ChevronDown, Search } from 'lucide-react';
+import { Plus, Star, MessageCircle, DollarSign, CheckCircle, XCircle, User, GraduationCap, Clock, AlertCircle, Edit2, Trash2, ChevronDown, Search, Eye } from 'lucide-react';
 import Button from '../../components/ui/Button.jsx';
 import Input from '../../components/ui/Input.jsx';
 import Textarea from '../../components/ui/Textarea.jsx';
@@ -37,16 +40,28 @@ export default function Recruitment() {
   const [suggestions, setSuggestions] = useState([]);
   const [suggestLoading, setSuggestLoading] = useState(false);
   const [questionDebounceTimer, setQuestionDebounceTimer] = useState(null);
+  // Edit Question modal state
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingQuestion, setEditingQuestion] = useState(null);
+  const [editQuestionText, setEditQuestionText] = useState('');
+  const [editSuggestions, setEditSuggestions] = useState([]);
+  const [editSuggestLoading, setEditSuggestLoading] = useState(false);
+  const [editQuestionDebounceTimer, setEditQuestionDebounceTimer] = useState(null);
   // Candidate search query
   const [candidateSearch, setCandidateSearch] = useState('');
 
-  const [newCandidate, setNewCandidate] = useState({ fullName: '', email: '', phone: '', positionAppliedFor: '', interviewDate: '' });
+  const [newCandidate, setNewCandidate] = useState({ fullName: '', email: '', phone: '855', positionAppliedFor: '', interviewDate: '' });
   const [finalDecision, setFinalDecision] = useState({ hourlyRate: '', rateReason: '', evaluator: '' });
   const [rejectionReason, setRejectionReason] = useState('');
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [candidateToDelete, setCandidateToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  // View interview questions modal state
+  const [showViewQuestionsModal, setShowViewQuestionsModal] = useState(false);
+  const [viewQuestionsCandidate, setViewQuestionsCandidate] = useState(null);
+  const [candidateInterviewData, setCandidateInterviewData] = useState(null);
+  const [loadingInterviewData, setLoadingInterviewData] = useState(false);
   // Removed legacy calendar popover refs
 
   // Populate decision fields when selecting a finalized candidate
@@ -118,13 +133,32 @@ export default function Recruitment() {
       toast.error('Please enter a valid email');
       return;
     }
+    
+    // Validate full name contains only English characters
+    const englishNamePattern = /^[a-zA-Z\s\.\-\']+$/;
+    if (!englishNamePattern.test(newCandidate.fullName.trim())) {
+      toast.error('Full name must contain only English letters, spaces, periods, hyphens, and apostrophes');
+      return;
+    }
+    
+    // Validate phone number
+    try {
+      const phoneValid = isValidPhoneNumber('+' + newCandidate.phone);
+      if (!phoneValid) {
+        toast.error('Please enter a valid phone number');
+        return;
+      }
+    } catch (error) {
+      toast.error('Please enter a valid phone number');
+      return;
+    }
 
     try {
   const { data } = await axiosInstance.post('/candidates', newCandidate);
   setCandidates((prev) => [data, ...prev]);
   // keep pagination meta consistent (might have grown total) just allow hasMore true
   if (!hasMore) setHasMore(true);
-      setNewCandidate({ fullName: '', email: '', phone: '', positionAppliedFor: '', interviewDate: '' });
+      setNewCandidate({ fullName: '', email: '', phone: '855', positionAppliedFor: '', interviewDate: '' });
       setSubmitAttempted(false);
       toast.success('Candidate added');
     } catch (e) {
@@ -141,23 +175,16 @@ export default function Recruitment() {
       toast.success('Question added');
     } catch (e) { toast.error('Failed to add question'); }
   };
-  const editInterviewQuestion = async (q) => {
-    const text = prompt('Edit question', q.question_text);
-    if (!text || text === q.question_text) return;
-    try {
-      await axiosInstance.put(`/interview-questions/${q.id}`, { question_text: text });
-      setCategories(prev => {
-        const clone = { ...prev };
-        Object.keys(clone).forEach(cat => { clone[cat] = clone[cat].map(item => item.id === q.id ? { ...item, question_text: text } : item); });
-        return clone;
-      });
-      toast.success('Question updated');
-    } catch { toast.error('Update failed'); }
+  const editInterviewQuestion = (q) => {
+    setEditingQuestion(q);
+    setEditQuestionText(q.question_text);
+    setEditSuggestions([]);
+    setShowEditModal(true);
   };
   const saveRating = async (questionId, rating) => {
     if (!selectedCandidate) return toast.error('Select a candidate first');
     try {
-      await axiosInstance.post('/candidate-questions', { candidate_id: selectedCandidate.id, question_id: questionId, rating });
+      await axiosInstance.post('/interview-questions/candidate-questions', { candidate_id: selectedCandidate.id, question_id: questionId, rating });
       setCandidateResponses(prev => ({
         ...prev,
         [selectedCandidate.id]: {
@@ -173,7 +200,7 @@ export default function Recruitment() {
     if (!selectedCandidate) return;
     if (!noteVal.trim()) return;
     try {
-      await axiosInstance.post('/candidate-questions', { candidate_id: selectedCandidate.id, question_id: questionId, noted: noteVal });
+      await axiosInstance.post('/interview-questions/candidate-questions', { candidate_id: selectedCandidate.id, question_id: questionId, noted: noteVal });
       setCandidateResponses(prev => ({
         ...prev,
         [selectedCandidate.id]: {
@@ -190,6 +217,21 @@ export default function Recruitment() {
     if (searchCache[val]) return searchCache[val];
     try { const { data } = await axiosInstance.get('/interview-questions/search', { params: { query: val }}); setSearchCache(c => ({ ...c, [val]: data })); return data; }
     catch { return []; }
+  };
+
+  // Fetch candidate interview details
+  const fetchCandidateInterviewDetails = async (candidateId) => {
+    setLoadingInterviewData(true);
+    try {
+      const { data } = await axiosInstance.get(`/interview-questions/candidates/${candidateId}/interview-details`);
+      setCandidateInterviewData(data);
+    } catch (error) {
+      console.error('Failed to fetch interview details:', error);
+      toast.error('Failed to load interview details');
+      setCandidateInterviewData(null);
+    } finally {
+      setLoadingInterviewData(false);
+    }
   };
 
   // Compute current average for selected candidate from local responses
@@ -256,6 +298,42 @@ export default function Recruitment() {
       setSuggestLoading(false);
     }, 400);
     setQuestionDebounceTimer(t);
+  };
+  const handleEditQuestionSubmit = async (e) => {
+    e.preventDefault();
+    if (!editingQuestion || !editQuestionText.trim()) return;
+    if (editQuestionText.trim() === editingQuestion.question_text) {
+      setShowEditModal(false);
+      return;
+    }
+    try {
+      await axiosInstance.put(`/interview-questions/${editingQuestion.id}`, { question_text: editQuestionText.trim() });
+      setCategories(prev => {
+        const clone = { ...prev };
+        Object.keys(clone).forEach(cat => { 
+          clone[cat] = clone[cat].map(item => 
+            item.id === editingQuestion.id ? { ...item, question_text: editQuestionText.trim() } : item
+          ); 
+        });
+        return clone;
+      });
+      toast.success('Question updated');
+      setShowEditModal(false);
+    } catch { 
+      toast.error('Failed to update question'); 
+    }
+  };
+  const handleEditQuestionInputChange = (val) => {
+    setEditQuestionText(val);
+    if (editQuestionDebounceTimer) clearTimeout(editQuestionDebounceTimer);
+    const t = setTimeout(async () => {
+      if (!val.trim()) { setEditSuggestions([]); return; }
+      setEditSuggestLoading(true);
+      const res = await searchQuestions(val.trim());
+      setEditSuggestions(res);
+      setEditSuggestLoading(false);
+    }, 400);
+    setEditQuestionDebounceTimer(t);
   };
   const deleteInterviewQuestion = async (q) => {
     // Placeholder: backend delete endpoint may not exist yet
@@ -342,6 +420,19 @@ export default function Recruitment() {
     setCandidateToDelete(null);
   };
 
+  const handleViewQuestions = async (e, candidate) => {
+    e.stopPropagation();
+    setViewQuestionsCandidate(candidate);
+    setShowViewQuestionsModal(true);
+    await fetchCandidateInterviewDetails(candidate.id);
+  };
+
+  const closeViewQuestionsModal = () => {
+    setShowViewQuestionsModal(false);
+    setViewQuestionsCandidate(null);
+    setCandidateInterviewData(null);
+  };
+
   const getStatusColor = (status) => {
     switch (status) {
       case 'accepted':
@@ -422,10 +513,25 @@ export default function Recruitment() {
                         <Input
                           required
                           value={newCandidate.fullName}
-                          onChange={(e) => setNewCandidate({ ...newCandidate, fullName: e.target.value })}
+                          onChange={(e) => {
+                            // Only allow English letters, spaces, periods, hyphens, and apostrophes
+                            const englishOnly = e.target.value.replace(/[^a-zA-Z\s\.\-\']/g, '');
+                            setNewCandidate({ ...newCandidate, fullName: englishOnly });
+                          }}
+                          onKeyPress={(e) => {
+                            // Prevent non-English characters from being typed
+                            const isValidChar = /[a-zA-Z\s\.\-\']/.test(e.key);
+                            if (!isValidChar) {
+                              e.preventDefault();
+                            }
+                          }}
                           className={`${submitAttempted && !newCandidate.fullName.trim() ? 'border-red-500 focus:ring-red-500' : ''}`}
-                          placeholder="Enter full name"
+                          placeholder="Enter full name (English only)"
+                          title="Only English letters, spaces, periods, hyphens, and apostrophes are allowed"
                         />
+                        {submitAttempted && !newCandidate.fullName.trim() && (
+                          <p className="text-xs text-red-600">This field is required</p>
+                        )}
                       </div>
                       <div className="space-y-2">
                         <label className="block text-sm font-medium text-gray-700">Email</label>
@@ -440,12 +546,40 @@ export default function Recruitment() {
                       </div>
                       <div className="space-y-2">
                         <label className="block text-sm font-medium text-gray-700">Phone</label>
-                        <Input
+                        <PhoneInput
+                          country={'kh'}
                           value={newCandidate.phone}
-                          onChange={(e) => setNewCandidate({ ...newCandidate, phone: e.target.value })}
-                          className={`${submitAttempted && !newCandidate.phone.trim() ? 'border-red-500 focus:ring-red-500' : ''}`}
-                          placeholder="012 345 678"
+                          onChange={(phone) => setNewCandidate({ ...newCandidate, phone })}
+                          enableSearch={true}
+                          disableSearchIcon={false}
+                          containerStyle={{
+                            width: '100%'
+                          }}
+                          inputStyle={{
+                            width: '100%',
+                            height: '40px',
+                            fontSize: '14px',
+                            border: submitAttempted && !newCandidate.phone.trim() ? '1px solid #ef4444' : '1px solid #d1d5db',
+                            borderRadius: '0.375rem',
+                            paddingLeft: '52px',
+                            backgroundColor: '#ffffff'
+                          }}
+                          buttonStyle={{
+                            border: submitAttempted && !newCandidate.phone.trim() ? '1px solid #ef4444' : '1px solid #d1d5db',
+                            borderRadius: '0.375rem 0 0 0.375rem',
+                            backgroundColor: '#f9fafb',
+                            borderRight: 'none'
+                          }}
+                          dropdownStyle={{
+                            borderRadius: '0.375rem',
+                            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+                            zIndex: 1000
+                          }}
+                          placeholder="Enter phone number"
                         />
+                        {submitAttempted && !newCandidate.phone.trim() && (
+                          <p className="text-xs text-red-600">This field is required</p>
+                        )}
                       </div>
                       <div className="space-y-2">
                         <label className="block text-sm font-medium text-gray-700">Position Applied For</label>
@@ -517,12 +651,14 @@ export default function Recruitment() {
                           </div>
                           <div className="flex items-center gap-2 justify-end">
                             <Button
-                              variant='outline'
                               size='sm'
                               onClick={submitInterview}
                               disabled={calculateAverageScore() === 0}
                               title={calculateAverageScore() === 0 ? 'Add at least one rating to submit' : 'Submit interview & move to discussion'}
-                              className='ml-auto'
+                              className={`ml-auto ${calculateAverageScore() === 0 
+                                ? 'bg-gray-300 hover:bg-gray-300 text-gray-500 cursor-not-allowed' 
+                                : 'bg-blue-600 hover:bg-blue-700 text-white'
+                              }`}
                             >
                               Submit Interview
                             </Button>
@@ -539,30 +675,32 @@ export default function Recruitment() {
                             const open = openCategories.includes(catName);
                             return (
                               <div key={catName} className="border rounded-lg bg-white shadow-sm transition-colors">
-                                <button
-                                  type="button"
-                                  onClick={() => toggleCategory(catName)}
-                                  aria-expanded={open}
-                                  aria-controls={`panel-${catName}`}
-                                  className="w-full flex items-center justify-between px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-t-lg"
-                                >
-                                  <div className="flex flex-col sm:flex-row sm:items-center sm:gap-3 text-left">
-                                    <span className="text-sm font-semibold text-gray-800">{catName}</span>
-                                    <span className={`mt-1 sm:mt-0 text-[10px] font-medium px-2 py-0.5 rounded border ${ratingColorClass(catAvg)}`}>{catAvg.toFixed(2)} / 5</span>
-                                  </div>
-                                  <div className="flex items-center gap-2">
+                                <div className="w-full flex items-center justify-between px-4 py-3 border-b border-gray-200 last:border-b-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleCategory(catName)}
+                                    aria-expanded={open}
+                                    aria-controls={`panel-${catName}`}
+                                    className="flex-1 flex items-center justify-between focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
+                                  >
+                                    <div className="flex flex-col sm:flex-row sm:items-center sm:gap-3 text-left">
+                                      <span className="text-sm font-semibold text-gray-800">{catName}</span>
+                                      <span className={`mt-1 sm:mt-0 text-[10px] font-medium px-2 py-0.5 rounded border ${ratingColorClass(catAvg)}`}>{catAvg.toFixed(2)} / 5</span>
+                                    </div>
+                                    <ChevronDown className={`w-5 h-5 transition-transform ${open ? 'rotate-180' : ''} ml-2`} />
+                                  </button>
+                                  <div className="flex items-center gap-2 ml-2">
                                     <Button
                                       size='xs'
                                       variant='outline'
-                                      onClick={(e)=>{ e.stopPropagation(); openAddQuestionModal(catName); }}
+                                      onClick={() => openAddQuestionModal(catName)}
                                       className='flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium bg-white hover:bg-blue-50 border-blue-200 hover:border-blue-300 shadow-sm'
                                     >
                                       <Plus className='w-3 h-3 shrink-0' />
                                       <span className='leading-none'>Question</span>
                                     </Button>
-                                    <ChevronDown className={`w-5 h-5 transition-transform ${open ? 'rotate-180' : ''}`} />
                                   </div>
-                                </button>
+                                </div>
                                 <div
                                   id={`panel-${catName}`}
                                   role="region"
@@ -811,15 +949,28 @@ export default function Recruitment() {
                                 <p className="text-xs text-gray-500 mt-1">Score: {Number(candidate.interviewScore).toFixed(1)}/5.0</p>
                               )}
                             </div>
-                            <button
-                              type="button"
-                              onClick={(e)=>handleDeleteCandidate(e, candidate)}
-                              className="shrink-0 w-7 h-7 flex items-center justify-center rounded-full text-gray-400 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 transition"
-                              title="Delete candidate"
-                              aria-label="Delete candidate"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            <div className="flex items-center gap-1">
+                              {(candidate.status === 'interview' || candidate.status === 'discussion' || candidate.status === 'accepted' || candidate.status === 'rejected') && (
+                                <button
+                                  type="button"
+                                  onClick={(e)=>handleViewQuestions(e, candidate)}
+                                  className="shrink-0 w-7 h-7 flex items-center justify-center rounded-full text-gray-400 hover:text-blue-600 hover:bg-blue-50 border border-transparent hover:border-blue-200 transition"
+                                  title="View interview questions and responses"
+                                  aria-label="View interview questions"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={(e)=>handleDeleteCandidate(e, candidate)}
+                                className="shrink-0 w-7 h-7 flex items-center justify-center rounded-full text-gray-400 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 transition"
+                                title="Delete candidate"
+                                aria-label="Delete candidate"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </div>
                         </div>
                       );
@@ -881,6 +1032,214 @@ export default function Recruitment() {
                 <Button type="submit" disabled={!newQuestionText.trim()}>Save</Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {showEditModal && (
+        <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40 animate-fade" onClick={()=>setShowEditModal(false)} />
+          <div className="relative bg-white rounded-lg shadow-xl w-full max-w-md p-6 space-y-4 animate-scale-in">
+            <h2 className="text-lg font-semibold">Edit Question</h2>
+            <form onSubmit={handleEditQuestionSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Question Text</label>
+                <Textarea
+                  rows={3}
+                  value={editQuestionText}
+                  onChange={(e)=>handleEditQuestionInputChange(e.target.value)}
+                  placeholder="Type question... (suggestions appear below)"
+                  className="text-sm"
+                  aria-describedby="edit-question-suggestions"
+                  autoFocus
+                />
+              </div>
+              <div id="edit-question-suggestions" className="space-y-1 max-h-40 overflow-auto border rounded-md p-2 bg-gray-50">
+                {editSuggestLoading && <p className="text-[11px] text-gray-500">Searching...</p>}
+                {!editSuggestLoading && editSuggestions.length === 0 && editQuestionText.trim() && (
+                  <p className="text-[11px] text-green-600">No similar existing question. Looks unique.</p>
+                )}
+                {editSuggestions.map(s => (
+                  <button
+                    type="button"
+                    key={s.id || s.question_text}
+                    onClick={()=>setEditQuestionText(s.question_text)}
+                    className="w-full text-left text-[12px] px-2 py-1 rounded hover:bg-white border border-transparent hover:border-blue-200"
+                  >
+                    {s.question_text || s}
+                  </button>
+                ))}
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <Button type="button" variant="outline" onClick={()=>setShowEditModal(false)}>Cancel</Button>
+                <Button type="submit" disabled={!editQuestionText.trim()}>Update</Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {showViewQuestionsModal && (
+        <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={closeViewQuestionsModal} />
+          <div className="relative bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+            <div className="p-6 border-b border-gray-200">
+              <h2 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
+                <Eye className="w-5 h-5 text-blue-600" />
+                Interview Questions & Responses
+              </h2>
+              <p className="text-sm text-gray-600 mt-1">
+                {viewQuestionsCandidate?.fullName} - {viewQuestionsCandidate?.positionAppliedFor}
+              </p>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6">
+              {loadingInterviewData && (
+                <div className="flex items-center justify-center py-8">
+                  <div className="text-sm text-gray-500">Loading interview data...</div>
+                </div>
+              )}
+              {!loadingInterviewData && candidateInterviewData && (
+                <div className="space-y-6">
+                  {candidateInterviewData.responses.length === 0 ? (
+                    <div className="text-center py-8">
+                      <MessageCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                      <p className="text-gray-600">No interview responses found for this candidate.</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                        <h3 className="font-medium text-blue-900 mb-2">Interview Summary</h3>
+                        
+                        {/* Candidate Information */}
+                        <div className="bg-white border border-blue-100 rounded-md p-3 mb-4">
+                          <h4 className="text-sm font-medium text-blue-800 mb-2">Candidate Information</h4>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                            <div>
+                              <span className="text-blue-700">Full Name:</span>
+                              <span className="ml-2 font-medium">{viewQuestionsCandidate?.fullName}</span>
+                            </div>
+                            <div>
+                              <span className="text-blue-700">Email:</span>
+                              <span className="ml-2 font-medium">{viewQuestionsCandidate?.email}</span>
+                            </div>
+                            <div>
+                              <span className="text-blue-700">Phone Number:</span>
+                              <span className="ml-2 font-medium">{viewQuestionsCandidate?.phone}</span>
+                            </div>
+                            <div>
+                              <span className="text-blue-700">Position Applied For:</span>
+                              <span className="ml-2 font-medium">{viewQuestionsCandidate?.positionAppliedFor}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Interview Statistics */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                          <div>
+                            <span className="text-blue-700">Total Questions:</span>
+                            <span className="ml-2 font-medium">{candidateInterviewData.responses.length}</span>
+                          </div>
+                          <div>
+                            <span className="text-blue-700">Questions with Ratings:</span>
+                            <span className="ml-2 font-medium">
+                              {candidateInterviewData.responses.filter(r => r.rating).length}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-blue-700">Average Rating:</span>
+                            <span className="ml-2 font-medium">
+                              {candidateInterviewData.responses.filter(r => r.rating).length > 0
+                                ? (candidateInterviewData.responses
+                                    .filter(r => r.rating)
+                                    .reduce((sum, r) => sum + r.rating, 0) /
+                                  candidateInterviewData.responses.filter(r => r.rating).length).toFixed(1)
+                                : 'N/A'} / 5.0
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-4">
+                        {/* Group responses by category */}
+                        {Object.entries(
+                          candidateInterviewData.responses.reduce((acc, response) => {
+                            const category = response.category || 'Uncategorized';
+                            if (!acc[category]) acc[category] = [];
+                            acc[category].push(response);
+                            return acc;
+                          }, {})
+                        ).map(([category, responses]) => (
+                          <div key={category} className="border border-gray-200 rounded-lg overflow-hidden">
+                            <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
+                              <h4 className="font-medium text-gray-900">{category}</h4>
+                              <p className="text-xs text-gray-600 mt-1">
+                                {responses.length} question{responses.length !== 1 ? 's' : ''} • 
+                                Average: {responses.filter(r => r.rating).length > 0
+                                  ? (responses.filter(r => r.rating).reduce((sum, r) => sum + r.rating, 0) / 
+                                     responses.filter(r => r.rating).length).toFixed(1)
+                                  : 'N/A'}/5.0
+                              </p>
+                            </div>
+                            <div className="divide-y divide-gray-100">
+                              {responses.map((response, index) => (
+                                <div key={response.id || index} className="p-4">
+                                  <div className="flex items-start justify-between mb-3">
+                                    <h5 className="font-medium text-gray-900 text-sm flex-1 pr-4">
+                                      {response.question_text}
+                                    </h5>
+                                    {response.rating && (
+                                      <div className="flex items-center gap-1 shrink-0">
+                                        <div className="flex">
+                                          {[1, 2, 3, 4, 5].map((star) => (
+                                            <Star
+                                              key={star}
+                                              className={`w-4 h-4 ${
+                                                star <= response.rating
+                                                  ? 'text-yellow-400 fill-current'
+                                                  : 'text-gray-300'
+                                              }`}
+                                            />
+                                          ))}
+                                        </div>
+                                        <span className="text-xs text-gray-600 ml-1">
+                                          {response.rating}/5
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+                                  
+                                  {response.noted && (
+                                    <div className="bg-gray-50 border border-gray-200 rounded-md p-3 mt-2">
+                                      <h6 className="text-xs font-medium text-gray-700 mb-1">Notes:</h6>
+                                      <p className="text-sm text-gray-600 leading-relaxed">
+                                        {response.noted}
+                                      </p>
+                                    </div>
+                                  )}
+                                  
+                                  <div className="flex items-center justify-end mt-3">
+                                    {response.created_at && (
+                                      <div className="text-xs text-gray-500">
+                                        {dayjs(response.created_at).format('MMM D, YYYY HH:mm')}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="p-6 border-t border-gray-200">
+              <div className="flex justify-end">
+                <Button type="button" variant="outline" onClick={closeViewQuestionsModal}>
+                  Close
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -61,6 +61,8 @@ export default function LecturerManagement(){
     return ()=> clearTimeout(t);
   },[searchQuery]);
 
+  // Expose fetch function so other effects can call it
+  const fetchLecturersRef = React.useRef(null);
   useEffect(()=>{ const fetchLecturers= async ()=>{ try{ setIsLoading(true); const params={ page, limit }; if(debouncedSearch) params.search=debouncedSearch; if(statusFilter) params.status=statusFilter; if(departmentFilter) params.department=departmentFilter; const res= await axiosInstance.get('/lecturers', { params }); const payload=res.data; const list= Array.isArray(payload)? payload : payload.data; // standardized response
       // Ensure each entry has name/email/status structure expected by UI
       const normalized = list.map(l => ({
@@ -71,6 +73,7 @@ export default function LecturerManagement(){
     lastLogin: l.lastLogin || 'Never',
     department: l.department || '',
     coursesCount: l.coursesCount || 0,
+    position: l.position || 'Lecturer',
     // support API returning researchFields or legacy specializations
     researchFields: l.researchFields || l.specializations || [],
     specializations: l.specializations || [],
@@ -80,12 +83,48 @@ export default function LecturerManagement(){
       setLecturers(normalized);
       if(payload.meta){ setTotalPages(payload.meta.totalPages); setTotalLecturers(payload.meta.total); if(page>payload.meta.totalPages && payload.meta.totalPages>0) setPage(payload.meta.totalPages); }
       else { setTotalPages(1); setTotalLecturers(normalized.length); }
-  }catch(err){ console.error('Failed to fetch lecturers', err); if(err.response?.status===401){ logout(); return;} setLecturers([]);} finally { setIsLoading(false);} }; fetchLecturers(); },[logout,page,limit,debouncedSearch,statusFilter,departmentFilter]);
+  }catch(err){ console.error('Failed to fetch lecturers', err); if(err.response?.status===401){ logout(); return;} setLecturers([]);} finally { setIsLoading(false);} }; fetchLecturersRef.current = fetchLecturers; fetchLecturers(); },[logout,page,limit,debouncedSearch,statusFilter,departmentFilter]);
   // re-run when filters change
   useEffect(()=>{ const params=new URLSearchParams(searchParams); if(statusFilter) params.set('status',statusFilter); else params.delete('status'); if(departmentFilter) params.set('department',departmentFilter); else params.delete('department'); setSearchParams(params,{replace:true}); setPage(1); },[statusFilter,departmentFilter]);
   useEffect(()=>{ const fetchDeps= async ()=>{ try { const res = await axiosInstance.get('/catalog/departments'); const data = Array.isArray(res.data)? res.data : res.data.departments || []; setDepartments(data); } catch(e){ console.warn('departments fetch failed', e.message);} }; fetchDeps(); },[]);
 
   useEffect(()=>{ setPage(1); },[searchQuery,statusFilter,departmentFilter]);
+
+  // Listen for onboarding completion events from other tabs and refresh immediately
+  useEffect(()=>{
+    const handleMessage = (evt)=>{
+      const data = evt?.data || evt;
+      if(data && data.type === 'onboarding_complete'){
+        // Optional: flash a toast
+        try { toast.success('New lecturer profile updated from onboarding'); } catch {}
+        // Refresh current page
+        fetchLecturersRef.current && fetchLecturersRef.current();
+      }
+    };
+    // BroadcastChannel path
+    let bc = null;
+    if(typeof window !== 'undefined' && 'BroadcastChannel' in window){
+      bc = new BroadcastChannel('lecturer-updates');
+      bc.onmessage = handleMessage;
+    }
+    // Storage event fallback
+    const onStorage = (e)=>{
+      if(e.key === 'lecturer-onboarding-update' && e.newValue){
+        try { const payload = JSON.parse(e.newValue); handleMessage(payload); } catch {}
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    // Also refresh on window focus if an onboarding flag exists
+    const onFocus = ()=>{
+      try { const raw = localStorage.getItem('lecturer-onboarding-update'); if(raw){ const payload=JSON.parse(raw); handleMessage(payload); localStorage.removeItem('lecturer-onboarding-update'); } } catch {}
+    };
+    window.addEventListener('focus', onFocus);
+    return ()=>{
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('focus', onFocus);
+      if(bc){ try { bc.close(); } catch {} }
+    };
+  },[]);
 
   const openMenu = (id, e)=>{
     const rect = e.currentTarget.getBoundingClientRect();
@@ -127,6 +166,8 @@ export default function LecturerManagement(){
         department: lecturer.department || get('department',''),
         position: lecturer.position || get('position','Lecturer'),
         status: lecturer.status || get('status','active'),
+  occupation: get('occupation','') || '',
+  place: get('place','') || '',
         phone: get('phone') || get('phone_number') || '',
         bio: get('qualifications',''),
         // normalize research fields
@@ -141,7 +182,10 @@ export default function LecturerManagement(){
         bank_name: get('bank_name','') || get('bankName',''),
         account_name: get('account_name','') || get('accountName',''),
         account_number: get('account_number','') || get('accountNumber',''),
-  payrollFilePath: get('payrollFilePath') || get('payroll_file_path') || get('payroll_path') || get('payrollPath') || get('pay_roll_in_riel') || ''
+        payrollFilePath: get('payrollFilePath') || get('payroll_file_path') || get('payroll_path') || get('payrollPath') || get('pay_roll_in_riel') || '',
+        // candidate linkage for hourly rate editing
+        candidateId: get('candidateId', null),
+        hourlyRateThisYear: get('hourlyRateThisYear', '') || ''
       };
       setSelectedLecturer(enriched);
       setIsEditDialogOpen(true);
@@ -170,8 +214,25 @@ export default function LecturerManagement(){
         position: selectedLecturer.position,
         status: selectedLecturer.status
       });
+      // Update candidate hourly rate if available
+      if (selectedLecturer.candidateId && (selectedLecturer.hourlyRateThisYear ?? '') !== '') {
+        try {
+          const rate = selectedLecturer.hourlyRateThisYear;
+          await axiosInstance.patch(`/candidates/${selectedLecturer.candidateId}`, { hourlyRate: rate });
+        } catch (candErr) {
+          console.warn('Failed to update candidate hourly rate', candErr);
+        }
+      }
+
       // reflect in table
       setLecturers(prev=> prev.map(l=> l.id===selectedLecturer.id ? { ...l, status: selectedLecturer.status, position: selectedLecturer.position } : l));
+      // Refetch detail to ensure latest (hourly rate synced)
+      try {
+        const fresh = await axiosInstance.get(`/lecturers/${selectedLecturer.id}/detail`);
+        const raw = fresh.data || {};
+        const get = (k, alt) => raw[k] ?? raw.data?.[k] ?? raw.profile?.[k] ?? alt;
+        setSelectedLecturer(p=> ({ ...p, candidateId: get('candidateId', p.candidateId), hourlyRateThisYear: get('hourlyRateThisYear', p.hourlyRateThisYear) }));
+      } catch {}
       toast.success('Profile updated');
       setIsEditDialogOpen(false);
     } catch(e){
@@ -466,10 +527,17 @@ export default function LecturerManagement(){
       </CardContent>
     </Card>}
 
-  <CreateLecturerModal isOpen={isCreateModalOpen} onClose={()=> setIsCreateModalOpen(false)} onLecturerCreated={(lec)=>{ const raw= lec.email.split('@')[0].replace(/\./g,' '); const display= raw.split(' ').map(w=> w.charAt(0).toUpperCase()+w.slice(1)).join(' '); const normalized={ id: lec.id, name: display, email: lec.email, status:'inactive', lastLogin:'Never', role:'lecturer', tempPassword: lec.tempPassword }; setLecturers(prev=> [normalized, ...prev]); setCreatedLecturers(prev=> [normalized, ...prev]); }}/>
+  <CreateLecturerModal 
+    isOpen={isCreateModalOpen} 
+    onClose={()=> setIsCreateModalOpen(false)} 
+    onLecturerCreated={(lec)=>{ const raw= lec.email.split('@')[0].replace(/\./g,' '); 
+    const display= raw.split(' ').map(w=> w.charAt(0).toUpperCase()+w.slice(1)).join(' '); 
+    const normalized={ id: lec.id, name: display, email: lec.email, status:'inactive', lastLogin:'Never', role:'lecturer', position: lec.profile?.position || 'Lecturer', tempPassword: lec.tempPassword }; 
+    setLecturers(prev=> [normalized, ...prev]); 
+    setCreatedLecturers(prev=> [normalized, ...prev]); }}/>
 
     <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-      <DialogContent className="max-w-4xl max-h-[95vh] w-full sm:w-auto overflow-y-auto">
+  <DialogContent className="max-w-5xl max-h-[95vh] w-full sm:w-auto overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Lecturer Profile</DialogTitle>
           <DialogDescription>Update lecturer information and upload documents</DialogDescription>
@@ -477,15 +545,16 @@ export default function LecturerManagement(){
         {selectedLecturer && (
           <div className='space-y-6'>
             <Tabs value={editTab} onValueChange={setEditTab}>
-              <TabsList>
-                <TabsTrigger value='basic'>Basic Info</TabsTrigger>
-                <TabsTrigger value='education'>Education</TabsTrigger>
-                <TabsTrigger value='bank'>Bank Info</TabsTrigger>
-                <TabsTrigger value='documents'>Documents</TabsTrigger>
+              <TabsList ariaLabel='Edit profile sections'>
+                <TabsTrigger value='basic' className='justify-start text-center whitespace-normal break-words min-w-0'>Basic Info</TabsTrigger>
+                <TabsTrigger value='bank' className='justify-start text-center whitespace-normal break-words min-w-0'>Bank Info</TabsTrigger>
+                <TabsTrigger value='education' className='justify-start text-center whitespace-normal break-words min-w-0'>Education</TabsTrigger>
+                <TabsTrigger value='work' className='justify-start text-center whitespace-normal break-words min-w-0'>Experience</TabsTrigger>
+                <TabsTrigger value='documents' className='justify-start text-center whitespace-normal break-words min-w-0'>Documents</TabsTrigger>
               </TabsList>
-              <TabsContent value='basic'>
+        <TabsContent value='basic'>
                 <div className='space-y-4'>
-                  <div className='grid grid-cols-2 gap-4'>
+                  <div className='grid grid-cols-1 sm:grid-cols-2 gap-4'>
                     <div className='space-y-2'>
                       <Label>Full Name</Label>
                       <Input value={selectedLecturer.name} readOnly />
@@ -505,11 +574,16 @@ export default function LecturerManagement(){
                     <div className='space-y-2'>
                       <Label>Position</Label>
                       <Select value={selectedLecturer.position} onValueChange={val=> setSelectedLecturer(p=> ({ ...p, position: val }))}>
-                        <SelectItem value='Assistant Professor'>Assistant Professor</SelectItem>
-                        <SelectItem value='Associate Professor'>Associate Professor</SelectItem>
-                        <SelectItem value='Professor'>Professor</SelectItem>
                         <SelectItem value='Lecturer'>Lecturer</SelectItem>
+                        <SelectItem value='Teaching Assistant (TA)'>Teaching Assistant (TA)</SelectItem>
                       </Select>
+                    </div>
+                    <div className='space-y-2'>
+                      <Label>Hourly Rate This Year ($)</Label>
+                      <Input type='number' step='0.01' placeholder='0.00' value={selectedLecturer.hourlyRateThisYear || ''} onChange={e=> {
+                        const v = e.target.value;
+                        setSelectedLecturer(p=> ({ ...p, hourlyRateThisYear: v }));
+                      }} />
                     </div>
                     <div className='space-y-2'>
                       <Label>Status</Label>
@@ -519,6 +593,7 @@ export default function LecturerManagement(){
                         <SelectItem value='on-leave'>On Leave</SelectItem>
                       </Select>
                     </div>
+                    <div />
                   </div>
                   <div className='space-y-2'>
                     <Label>Bio</Label>
@@ -537,7 +612,7 @@ export default function LecturerManagement(){
                   {selectedLecturer.education.length ? selectedLecturer.education.map(edu=> (
                     <Card key={edu.id || edu.degree+edu.institution}>
                       <CardContent className='pt-4'>
-                        <div className='grid grid-cols-2 gap-4 text-sm'>
+                        <div className='grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm'>
                           <div>
                             <Label className='text-xs font-semibold'>Degree</Label>
                             <p>{edu.degree}</p>
@@ -560,9 +635,9 @@ export default function LecturerManagement(){
                   )) : <p className='text-gray-500 text-center py-8 text-sm'>No education records found</p>}
                 </div>
               </TabsContent>
-              <TabsContent value='bank'>
+        <TabsContent value='bank'>
                 <div className='space-y-4'>
-                  <div className='grid grid-cols-2 gap-4'>
+          <div className='grid grid-cols-1 sm:grid-cols-2 gap-4'>
                     <div className='space-y-2'>
                       <Label>Bank Name</Label>
                       <Input value={selectedLecturer.bank_name || selectedLecturer.bankName || ''} onChange={e=> setSelectedLecturer(p=> ({ ...p, bank_name: e.target.value }))} />
@@ -580,8 +655,8 @@ export default function LecturerManagement(){
                     <Label className='text-base font-medium'>Payroll Document / Image</Label>
                     <div className='mt-2'>
                       {selectedLecturer.payrollFilePath || selectedLecturer.payrollUploaded ? (
-                        <div className='flex items-center justify-between p-4 border rounded-lg'>
-                          <div className='flex items-center gap-4'>
+                        <div className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-4 border rounded-lg'>
+                          <div className='flex items-center gap-4 flex-1 min-w-0'>
                             {/* show thumbnail if image or file icon otherwise */}
                             {selectedLecturer.payrollFilePath ? (()=>{
                               const path = selectedLecturer.payrollFilePath.startsWith('uploads/')? selectedLecturer.payrollFilePath : `uploads/${selectedLecturer.payrollFilePath.replace(/^\/?/, '')}`;
@@ -613,14 +688,14 @@ export default function LecturerManagement(){
                               <div className='text-sm text-gray-500'>No payroll file available</div>
                             )}
                           </div>
-                          <div className='flex gap-2'>
+                          <div className='flex flex-wrap gap-2 w-full sm:w-auto sm:justify-end'>
                             {selectedLecturer.payrollFilePath && (()=>{
                               const path = selectedLecturer.payrollFilePath.startsWith('uploads/')? selectedLecturer.payrollFilePath : `uploads/${selectedLecturer.payrollFilePath.replace(/^\/?/, '')}`;
                               const url = `${window.location.origin.replace(/:\d+$/,':4000')}/${path}`;
                               return <>
                                 {/* For PDFs, preview in new tab; images will open too */}
-                                <a href={url} target='_blank' rel='noreferrer' className='inline-flex items-center px-3 py-1.5 text-xs rounded border hover:bg-gray-50'><Eye className='w-4 h-4 mr-1'/> Preview</a>
-                                <a href={url} download className='inline-flex items-center px-3 py-1.5 text-xs rounded border hover:bg-gray-50'><Download className='w-4 h-4 mr-1'/> Download</a>
+                                <a href={url} target='_blank' rel='noreferrer' className='inline-flex items-center px-3 py-1.5 text-xs rounded border hover:bg-gray-50 whitespace-nowrap'><Eye className='w-4 h-4 mr-1'/> Preview</a>
+                                <a href={url} download className='inline-flex items-center px-3 py-1.5 text-xs rounded border hover:bg-gray-50 whitespace-nowrap'><Download className='w-4 h-4 mr-1'/> Download</a>
                               </>;
                             })()}
                           </div>
@@ -641,24 +716,46 @@ export default function LecturerManagement(){
                   </div>
                 </div>
               </TabsContent>
+              <TabsContent value='work'>
+                <div className='space-y-4'>
+                  {(!selectedLecturer.occupation && !selectedLecturer.place) ? (
+                    <p className='text-gray-500 text-center py-8 text-sm'>No work experience found</p>
+                  ) : (
+                    <Card>
+                      <CardContent className='pt-4'>
+                        <div className='grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm'>
+                          <div>
+                            <Label className='text-xs font-semibold'>Occupation</Label>
+                            <p>{selectedLecturer.occupation || '—'}</p>
+                          </div>
+                          <div>
+                            <Label className='text-xs font-semibold'>Place</Label>
+                            <p>{selectedLecturer.place || '—'}</p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+              </TabsContent>
               <TabsContent value='documents'>
                 <div className='space-y-6'>
                   <div>
                     <Label className='text-base font-medium'>Curriculum Vitae (CV)</Label>
                     <div className='mt-2 space-y-4'>
                       {selectedLecturer.cvUploaded ? (
-                        <div className='flex items-center justify-between p-4 border rounded-lg'>
-                          <div className='flex items-center'>
+                        <div className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-4 border rounded-lg'>
+                          <div className='flex items-center flex-1 min-w-0'>
                             <FileText className='h-8 w-8 text-red-600 mr-3'/>
                             <div>
                               <p className='font-medium'>Current CV</p>
                               <p className='text-sm text-gray-600'>PDF Document</p>
                             </div>
                           </div>
-                          <div className='flex gap-2'>
+                          <div className='flex flex-wrap gap-2 w-full sm:w-auto sm:justify-end'>
                             {selectedLecturer.cvFilePath && (()=>{ const path = selectedLecturer.cvFilePath.startsWith('uploads/')? selectedLecturer.cvFilePath : `uploads/${selectedLecturer.cvFilePath.replace(/^\/?/, '')}`; const url = `${window.location.origin.replace(/:\d+$/,':4000')}/${path}`; return <>
-                              <a href={url} target='_blank' rel='noreferrer' className='inline-flex items-center px-3 py-1.5 text-xs rounded border hover:bg-gray-50'><Eye className='w-4 h-4 mr-1'/> Preview</a>
-                              <a href={url} download className='inline-flex items-center px-3 py-1.5 text-xs rounded border hover:bg-gray-50'><Download className='w-4 h-4 mr-1'/> Download</a>
+                              <a href={url} target='_blank' rel='noreferrer' className='inline-flex items-center px-3 py-1.5 text-xs rounded border hover:bg-gray-50 whitespace-nowrap'><Eye className='w-4 h-4 mr-1'/> Preview</a>
+                              <a href={url} download className='inline-flex items-center px-3 py-1.5 text-xs rounded border hover:bg-gray-50 whitespace-nowrap'><Download className='w-4 h-4 mr-1'/> Download</a>
                             </>; })()}
                           </div>
                         </div>
@@ -681,18 +778,18 @@ export default function LecturerManagement(){
                     <Label className='text-base font-medium'>Course Syllabus</Label>
                     <div className='mt-2 space-y-4'>
                       {selectedLecturer.syllabusUploaded ? (
-                        <div className='flex items-center justify-between p-4 border rounded-lg'>
-                          <div className='flex items-center'>
+                        <div className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-4 border rounded-lg'>
+                          <div className='flex items-center flex-1 min-w-0'>
                             <FileText className='h-8 w-8 text-blue-600 mr-3'/>
                             <div>
                               <p className='font-medium'>Current Syllabus</p>
                               <p className='text-sm text-gray-600'>PDF Document</p>
                             </div>
                           </div>
-                          <div className='flex gap-2'>
+                          <div className='flex flex-wrap gap-2 w-full sm:w-auto sm:justify-end'>
                             {selectedLecturer.syllabusFilePath && (()=>{ const path = selectedLecturer.syllabusFilePath.startsWith('uploads/')? selectedLecturer.syllabusFilePath : `uploads/${selectedLecturer.syllabusFilePath.replace(/^\/?/,'')}`; const url = `${window.location.origin.replace(/:\d+$/,':4000')}/${path}`; return <>
-                              <a href={url} target='_blank' rel='noreferrer' className='inline-flex items-center px-3 py-1.5 text-xs rounded border hover:bg-gray-50'><Eye className='w-4 h-4 mr-1'/> Preview</a>
-                              <a href={url} download className='inline-flex items-center px-3 py-1.5 text-xs rounded border hover:bg-gray-50'><Download className='w-4 h-4 mr-1'/> Download</a>
+                              <a href={url} target='_blank' rel='noreferrer' className='inline-flex items-center px-3 py-1.5 text-xs rounded border hover:bg-gray-50 whitespace-nowrap'><Eye className='w-4 h-4 mr-1'/> Preview</a>
+                              <a href={url} download className='inline-flex items-center px-3 py-1.5 text-xs rounded border hover:bg-gray-50 whitespace-nowrap'><Download className='w-4 h-4 mr-1'/> Download</a>
                             </>; })()}
                           </div>
                         </div>

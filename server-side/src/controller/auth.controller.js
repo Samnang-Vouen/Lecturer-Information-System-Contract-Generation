@@ -1,4 +1,4 @@
-import User, { Role, UserRole, LecturerProfile } from '../model/user.model.js';
+import { User, Role, UserRole, LecturerProfile } from '../model/index.js';
 import { generateToken } from '../config/utils.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';

@@ -1,4 +1,4 @@
-import { User, Role, Department, UserRole, DepartmentProfile, LecturerProfile } from '../model/user.model.js';
+import { User, Role, Department, UserRole, DepartmentProfile, LecturerProfile } from '../model/index.js';
 import bcrypt from 'bcrypt';
 import { Sequelize, Op } from 'sequelize';
 import sequelize from '../config/db.js';
@@ -119,7 +119,7 @@ export const getAllUsers = async (req, res) => {
  */
 export const createUser = async (req, res) => {
   try {
-  let { fullName, email, role, department } = req.body;
+  let { fullName, email, role, department, position } = req.body;
     const errors = {};
     if (!fullName || !fullName.trim()) errors.fullName = "Full name is required";
     if (!email || !email.trim()) {
@@ -137,6 +137,14 @@ export const createUser = async (req, res) => {
       department = req.user.department_name;
     } else {
       errors.department = 'Department missing (assign admin a department first)';
+    }
+  }
+  // Validate position field for lecturers
+  if (role.toLowerCase() === 'lecturer') {
+    if (!position || !position.trim()) {
+      errors.position = "Position is required for lecturers";
+    } else if (!['Lecturer', 'Teaching Assistant (TA)'].includes(position.trim())) {
+      errors.position = "Position must be either 'Lecturer' or 'Teaching Assistant (TA)'";
     }
   }
     if (Object.keys(errors).length > 0) return res.status(400).json({ message: "Validation failed", errors });
@@ -181,9 +189,8 @@ export const createUser = async (req, res) => {
         lecturerProfile = await LecturerProfile.create({
           user_id: newUser.id,
           employee_id: `EMP${Date.now().toString().slice(-6)}`,
-          first_name: fullName.split(' ')[0],
-          last_name: fullName.split(' ').slice(1).join(' ') || '',
-          position: 'Lecturer',
+          full_name_english: fullName,
+          position: position.trim(),
           join_date: new Date(),
           status: 'active',
           cv_uploaded: false,
@@ -204,8 +211,7 @@ export const createUser = async (req, res) => {
     if (result.lecturerProfile) {
       responseData.profile = {
         employeeId: result.lecturerProfile.employee_id,
-        firstName: result.lecturerProfile.first_name,
-        lastName: result.lecturerProfile.last_name,
+        fullName: result.lecturerProfile.full_name_english,
         position: result.lecturerProfile.position
       };
     }

@@ -13,7 +13,8 @@ import {
   PanelRightClose,
   PanelRightOpen,
   BookOpen,
-  School
+  School,
+  X
 } from "lucide-react";
 
 /**
@@ -280,59 +281,67 @@ export function Sidebar({ user: userProp, onLogout, mobileOpen = false, onClose 
             <Building2 className="h-8 w-8 text-blue-600 flex-shrink-0" />
             <span className="text-lg font-semibold text-gray-900">LCMS</span>
           </div>
-          <button onClick={onClose} className="ml-auto p-2 rounded text-gray-600 hover:text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500">Close</button>
+          <button 
+            onClick={onClose} 
+            className="ml-auto p-2 rounded text-gray-600 hover:text-gray-800 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+            aria-label="Close sidebar"
+          >
+            <X className="h-5 w-5" />
+          </button>
         </div>
-        <div className="px-4 py-6 overflow-y-auto h-[calc(100vh-4rem)]">
-          <p className='text-gray-600 mb-6'>
-            Welcome back,<br/>
-            <span className='font-semibold text-gray-900'>
-              {formatUserDisplay(user)}
-            </span><br/>
-            <span className='capitalize text-blue-600'>
-              {user.department ? ` ${user.department}` : ''}
-            </span>
-          </p>
-          <nav className="space-y-2">
-            {filteredNavItems.map((item) => {
-              const Icon = item.icon;
-              let href = item.href;
-              if (item.title === 'Dashboard') {
-                const roleRoot = {
-                  superadmin: '/superadmin',
-                  admin: '/admin',
-                  lecturer: '/lecturer',
-                  management: '/management'
-                }[user.role] || '/dashboard';
-                href = roleRoot;
-              }
-              const active = isActive(href, item.title);
-              return (
-                <Link key={item.title} to={href} className="block" onClick={onClose}>
-                  <Button
-                    variant={active ? "primary" : "outline"}
-                    className={cn(
-                      "w-full transition-colors flex items-center gap-3 px-4 py-2 text-sm font-medium overflow-hidden justify-start",
-                      active ? "bg-blue-600 text-white hover:bg-blue-600" : "text-gray-700 hover:bg-gray-100"
-                    )}
-                  >
-                    <span className="w-5 flex justify-center">
-                      <Icon className={cn("h-4 w-4", active ? "text-white" : "text-gray-600 group-hover:text-gray-900")} />
-                    </span>
-                    <span className={cn(
-                      active ? "text-white" : "text-gray-700 group-hover:text-gray-900",
-                      "transition-opacity duration-200 flex-1 text-left whitespace-nowrap"
-                    )}>{item.title}</span>
-                  </Button>
-                </Link>
-              );
-            })}
-          </nav>
-        </div>
-        <div className="p-4 border-t border-gray-200">
-          <Button variant="outline" className="w-full text-red-600 hover:text-red-700 hover:bg-red-50 flex items-center" onClick={() => { onClose(); logout(); }}>
-            <LogOut className="h-4 w-4" />
-            <span className="ml-3">Sign Out</span>
-          </Button>
+        <div className="flex flex-col h-[calc(100vh-4rem)]">
+          <div className="flex-1 px-4 py-6 overflow-y-auto">
+            <p className='text-gray-600 mb-6'>
+              Welcome back,<br/>
+              <span className='font-semibold text-gray-900'>
+                {formatUserDisplay(user)}
+              </span><br/>
+              <span className='capitalize text-blue-600'>
+                {user.department ? ` ${user.department}` : ''}
+              </span>
+            </p>
+            <nav className="space-y-2">
+              {filteredNavItems.map((item) => {
+                const Icon = item.icon;
+                let href = item.href;
+                if (item.title === 'Dashboard') {
+                  const roleRoot = {
+                    superadmin: '/superadmin',
+                    admin: '/admin',
+                    lecturer: '/lecturer',
+                    management: '/management'
+                  }[user.role] || '/dashboard';
+                  href = roleRoot;
+                }
+                const active = isActive(href, item.title);
+                return (
+                  <Link key={item.title} to={href} className="block" onClick={onClose}>
+                    <Button
+                      variant={active ? "primary" : "outline"}
+                      className={cn(
+                        "w-full transition-colors flex items-center gap-3 px-4 py-2 text-sm font-medium overflow-hidden justify-start",
+                        active ? "bg-blue-600 text-white hover:bg-blue-600" : "text-gray-700 hover:bg-gray-100"
+                      )}
+                    >
+                      <span className="w-5 flex justify-center">
+                        <Icon className={cn("h-4 w-4", active ? "text-white" : "text-gray-600 group-hover:text-gray-900")} />
+                      </span>
+                      <span className={cn(
+                        active ? "text-white" : "text-gray-700 group-hover:text-gray-900",
+                        "transition-opacity duration-200 flex-1 text-left whitespace-nowrap"
+                      )}>{item.title}</span>
+                    </Button>
+                  </Link>
+                );
+              })}
+            </nav>
+          </div>
+          <div className="flex-shrink-0 p-4 border-t border-gray-200">
+            <Button variant="outline" className="w-full text-red-600 hover:text-red-700 hover:bg-red-50 flex items-center" onClick={() => { onClose(); logout(); }}>
+              <LogOut className="h-4 w-4" />
+              <span className="ml-3">Sign Out</span>
+            </Button>
+          </div>
         </div>
       </div>
     </>

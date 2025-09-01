@@ -4,13 +4,7 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
-  resolve: {
-    alias: {
-      // Workaround for lucide-react referencing missing ./icons/chrome.js in 0.539.0
-      'lucide-react/dist/esm/icons/chrome.js': '/src/icon-stubs/chrome.js',
-      'lucide-react/dist/esm/icons/chrome': '/src/icon-stubs/chrome.js'
-    }
-  },
+  resolve: {},
   optimizeDeps: {
     // Defer heavy libs to dynamic import if needed
     exclude: ['xlsx']

@@ -1,6 +1,5 @@
 import sequelize from '../config/db.js';
 import { DataTypes } from 'sequelize';
-import User from './user.model.js';
 
 const Contract = sequelize.define('Contract', {
   id: { type: DataTypes.INTEGER.UNSIGNED, primaryKey: true, autoIncrement: true },
@@ -19,8 +18,5 @@ const Contract = sequelize.define('Contract', {
   createdAt: 'created_at',
   updatedAt: 'updated_at'
 });
-
-Contract.belongsTo(User, { foreignKey: 'created_by', onDelete: 'RESTRICT', onUpdate: 'CASCADE' });
-User.hasMany(Contract, { foreignKey: 'created_by' });
 
 export default Contract;

@@ -46,7 +46,6 @@ export default function LecturerProfile(){
     full_name_khmer: p.full_name_khmer || '',
     personal_email: p.personal_email || '',
     phone_number: p.phone_number || '',
-    occupation: p.occupation || '',
     place: p.place || '',
     latest_degree: p.latest_degree || '',
     degree_year: p.degree_year || '',
@@ -58,7 +57,8 @@ export default function LecturerProfile(){
     short_bio: p.short_bio || '',
     bank_name: p.bank_name || '',
     account_name: p.account_name || '',
-    account_number: p.account_number || ''
+    account_number: p.account_number || '',
+    hourlyRateThisYear: p.hourlyRateThisYear ?? '',
   });
 
   const sanitizeEnglish = (s='') => String(s).replace(/[^A-Za-z' -]/g, '');
@@ -116,7 +116,8 @@ export default function LecturerProfile(){
     if(!validate()) { toast.error('Fix validation errors'); return; }
     setSaving(true);
     try {
-      const payload = { ...form, research_fields: form.research_fields };
+  const { hourlyRateThisYear, ...rest } = form;
+  const payload = { ...rest, research_fields: form.research_fields };
       const res = await axiosInstance.put('/lecturer-profile/me', payload);
       setProfile(res.data.profile || res.data); // handle either shape
       toast.success('Profile updated');
@@ -178,7 +179,6 @@ export default function LecturerProfile(){
         <>
           {/* Overview Card */}
           <Card className="shadow-sm hover:shadow-xl transition-all duration-300 border border-gray-100/70 bg-white/90 backdrop-blur rounded-2xl overflow-hidden group">
-            <div className="h-1 w-full bg-gradient-to-r from-indigo-500 via-blue-500 to-emerald-500" />
             <CardContent className="p-6 md:p-10">
               <div className="flex flex-col xl:flex-row gap-10 items-start xl:items-center">
                 <div className="flex items-center gap-6 w-full md:w-auto">
@@ -225,8 +225,8 @@ export default function LecturerProfile(){
                   <Field name="phone_number" label="Contact Number" value={form.phone_number} onChange={onChange} disabled={!editMode} error={errors.phone_number} />
                   <div className="md:col-span-2 xl:col-span-3 grid grid-cols-3 gap-6 items-end">
                     <ReadOnly label="School Email" value={profile.user_email || profile.email || ''} />
-                    <Field name="occupation" label="Occupation" value={form.occupation} onChange={onChange} disabled={!editMode} />
-                    <Field name="place" label="Place" value={form.place} onChange={onChange} disabled={!editMode} />
+                    <ReadOnly label="Position" value={profile.position || profile.occupation || ''} />
+                    <ReadOnly label="Hourly Rate This Year ($)" value={form.hourlyRateThisYear || ''} />
                   </div>
                   <div className="md:col-span-2 xl:col-span-3">
                     <Field name="short_bio" label="Short Bio" as="textarea" value={form.short_bio} onChange={onChange} onPaste={onPaste} disabled={!editMode} />
@@ -410,18 +410,18 @@ function Section({ title, children }){
   );
 }
 
-function Field({ name,label,value,onChange,disabled,as,options,type='text',error, onPaste }){
+function Field({ name,label,value,onChange,disabled,as,options,type='text',error, onPaste, readOnly }){
   return (
     <div className="space-y-1 flex flex-col justify-end">
       <Label htmlFor={name} className="text-xs font-medium text-gray-600">{label}</Label>
-      {as==='textarea' && <Textarea id={name} name={name} value={value} onChange={onChange} onPaste={onPaste} disabled={disabled} className="bg-white" rows={4} />}
+      {as==='textarea' && <Textarea id={name} name={name} value={value} onChange={onChange} onPaste={onPaste} disabled={disabled} readOnly={readOnly} className="bg-white" rows={4} />}
       {as==='select' && (
-        <select id={name} name={name} value={value} onChange={onChange} onPaste={onPaste} disabled={disabled} className="w-full border rounded px-2 py-1 text-sm bg-white disabled:opacity-60">
+        <select id={name} name={name} value={value} onChange={onChange} onPaste={onPaste} disabled={disabled} readOnly={readOnly} className="w-full border rounded px-2 py-1 text-sm bg-white disabled:opacity-60">
           <option value="">Select...</option>
           {options.map(o=> <option key={o} value={o}>{o}</option>)}
         </select>
       )}
-      {!as && <Input id={name} name={name} value={value} onChange={onChange} onPaste={onPaste} disabled={disabled} type={type} className="bg-white" />}
+      {!as && <Input id={name} name={name} value={value} onChange={onChange} onPaste={onPaste} disabled={disabled} readOnly={readOnly} type={type} className="bg-white" />}
       {error && <p className="text-xs text-red-600">{error}</p>}
     </div>
   );

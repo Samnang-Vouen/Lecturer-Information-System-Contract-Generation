@@ -1,11 +1,13 @@
 import fs from 'fs';
 import path from 'path';
-import { LecturerProfile, User, Department } from '../model/user.model.js';
+import { fn, col, where } from 'sequelize';
+import { LecturerProfile, User, Department } from '../model/index.js';
+import Candidate from '../model/candidate.model.js';
 import Course from '../model/course.model.js';
 import LecturerCourse from '../model/lecturerCourse.model.js';
 
 const LECTURER_PROFILE_EDITABLE_FIELDS = [
-  'full_name_english','full_name_khmer','personal_email','phone_number','occupation','place',
+  'full_name_english','full_name_khmer','personal_email','phone_number','place',
   'latest_degree','degree_year','major','university','country','qualifications','research_fields','short_bio',
   'bank_name','account_name','account_number'
 ];
@@ -58,10 +60,39 @@ export const getMyLecturerProfile = async (req,res)=>{
     const departments = await profile.getDepartments?.() || [];
     // Fetch LecturerCourse rows with joined Course for names
     const lecturerCourses = await LecturerCourse.findAll({ where: { lecturer_profile_id: profile.id }, include: [{ model: Course }] });
-    if(String(req.query.debug||'')==='1'){
-      return res.json({ raw: toResponse(profile,user, departments, lecturerCourses), deptCount: departments.length, courseLinkCount: lecturerCourses.length });
+    // Lookup hourly rate from Candidate:
+    // 1) Try matching by cleaned full name (strip titles), 2) fallback to email
+    let hourlyRateThisYear = null;
+    try {
+      const titleRegex = /^(mr\.?|ms\.?|mrs\.?|dr\.?|prof\.?|professor|miss)\s+/i;
+      const normalizeName = (s='') => String(s)
+        .trim()
+        .replace(titleRegex, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const rawName = profile.full_name_english || user?.display_name || '';
+      const cleanedName = normalizeName(rawName);
+
+      let cand = null;
+      if (cleanedName) {
+        const cleanedLower = cleanedName.toLowerCase();
+        cand = await Candidate.findOne({
+          where: where(fn('LOWER', fn('TRIM', col('fullName'))), cleanedLower)
+        });
+      }
+      if (!cand && user?.email) {
+        cand = await Candidate.findOne({ where: { email: user.email } });
+      }
+      if (cand && cand.hourlyRate != null) {
+        hourlyRateThisYear = String(cand.hourlyRate);
+      }
+    } catch (err) {
+      console.warn('[getMyLecturerProfile] candidate lookup failed:', err.message);
     }
-    return res.json(toResponse(profile,user, departments, lecturerCourses));
+    if(String(req.query.debug||'')==='1'){
+      return res.json({ raw: { ...toResponse(profile,user, departments, lecturerCourses), hourlyRateThisYear }, deptCount: departments.length, courseLinkCount: lecturerCourses.length });
+    }
+  return res.json({ ...toResponse(profile,user, departments, lecturerCourses), hourlyRateThisYear });
   } catch (e) {
     console.error('getMyLecturerProfile error', e);
     return res.status(500).json({ message: 'Server error' });

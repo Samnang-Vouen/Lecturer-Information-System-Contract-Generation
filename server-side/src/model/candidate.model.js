@@ -14,7 +14,6 @@ const Candidate = sequelize.define('Candidate', {
     email: {
         type: DataTypes.STRING(255),
         allowNull: false,
-        // Removed 'unique: true' to avoid accumulating duplicate indexes during alter sync.
         validate: { isEmail: true },
     },
     phone: {
@@ -59,7 +58,7 @@ const Candidate = sequelize.define('Candidate', {
         allowNull: true,
     },
 }, {
-    tableName: 'candidates',
+    tableName: 'Candidates',
     timestamps: true,
     createdAt: 'created_at',
     updatedAt: 'updated_at',

@@ -1,5 +1,6 @@
 import { InterviewQuestion } from '../model/interviewQuestion.model.js';
 import { Op } from 'sequelize';
+import sequelize from '../config/db.js';
 
 const seedData = {
   /* 'Academic & Professional Background': [
@@ -35,7 +36,7 @@ const seedData = {
     'Are you open to mentoring students or leading student clubs/projects?'
   ], */
   'Adaptability & Problem-Solving': [
-    'How do you adapt when a lesson isn’t going as planned?',
+    'How do you adapt when a lesson isn\'t going as planned?',
     'Tell us about a time you had to deal with a difficult student or classroom challenge.',
     'How do you manage cultural diversity in the classroom?'
   ],
@@ -58,8 +59,10 @@ export async function seedInterviewQuestions() {
     return;
   }
   if (existingCount && process.env.SEED_FORCE === 'true') {
+    // Clean up candidate responses that reference old questions before deleting questions
+    await sequelize.query('DELETE FROM candidate_questions WHERE question_id NOT IN (SELECT id FROM `interview-questions`)');
     await InterviewQuestion.destroy({ where: {} });
-    console.log('[seedInterviewQuestions] Cleared existing questions (SEED_FORCE=true)');
+    console.log('[seedInterviewQuestions] Cleared existing questions and orphaned responses (SEED_FORCE=true)');
   }
   if (process.env.CLEAN_INTERVIEW_QUESTIONS === 'true') {
     const deleted = await InterviewQuestion.destroy({ where: { category: { [Op.notIn]: activeCategories } } });

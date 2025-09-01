@@ -1,7 +1,11 @@
 import { Op, Sequelize } from 'sequelize';
-import { LecturerProfile, User, Department } from '../model/user.model.js';
+import { LecturerProfile, User, Department } from '../model/index.js';
+import Candidate from '../model/candidate.model.js';
 import LecturerCourse from '../model/lecturerCourse.model.js';
 import Course from '../model/course.model.js';
+import { findOrCreateResearchFields } from './researchField.controller.js';
+import { findOrCreateUniversities } from './university.controller.js';
+import { findOrCreateMajors } from './major.controller.js';
 
 /**
  * GET /api/lecturers
@@ -32,56 +36,112 @@ export const getLecturers = async (req, res) => {
       };
     }
 
-    // Filters that apply to User (status, department_name)
+    // Filters that apply to User (status)
     const userWhere = {};
     if (statusFilter && ['active','inactive'].includes(statusFilter)) userWhere.status = statusFilter;
-    // Department scoping: if requester is an admin (this route already admin-only) force to their own department
-    // Ignore any client-supplied department filter to prevent data leakage across departments.
+    
+    // For department admins, we'll add a where condition that checks if the lecturer
+    // teaches any courses in the admin's department using EXISTS subquery
+    let profileWhere = where;
     if (req.user?.role === 'admin' && req.user.department_name) {
-      userWhere.department_name = req.user.department_name;
-    } else if (departmentFilter) {
-      // Fallback (should not happen for admin without dept) – allow explicit filter only when not overriding
-      userWhere.department_name = departmentFilter;
+      const dept = await Department.findOne({ where: { dept_name: req.user.department_name } });
+      if (dept) {
+        // Add a condition to only show lecturers who teach courses in this department
+        profileWhere = {
+          ...where,
+          [Op.and]: [
+            where || {},
+            Sequelize.literal(`EXISTS (
+              SELECT 1 
+              FROM Lecturer_Courses lc 
+              INNER JOIN Courses c ON lc.course_id = c.id 
+              WHERE lc.lecturer_profile_id = LecturerProfile.id 
+              AND c.dept_id = ${parseInt(dept.id)}
+            )`)
+          ]
+        };
+      }
     }
 
     const { rows, count } = await LecturerProfile.findAndCountAll({
       attributes: ['id','employee_id','position','status','join_date','cv_uploaded','research_fields','qualifications','full_name_english','full_name_khmer','cv_file_path'],
-      include: [{
-        model: User,
-        attributes: ['id','email','status','last_login','department_name','created_at'],
-        where: Object.keys(userWhere).length ? userWhere : undefined,
-        required: true
-      }],
-      where,
+      include: [
+        {
+          model: User,
+          attributes: ['id','email','status','last_login','department_name','created_at'],
+          where: Object.keys(userWhere).length ? userWhere : undefined,
+          required: true
+        }
+      ],
+      where: profileWhere,
       limit,
       offset,
       distinct: true,
-  order: [['id','DESC']]
+      order: [['id','DESC']]
     });
 
-    // Optionally compute course counts (always for now—cheap single grouped query)
+    // Optionally compute course counts (only count courses from admin's department)
     const profileIds = rows.map(r=> r.id);
     let countsMap = new Map();
     if (profileIds.length) {
-      const counts = await LecturerCourse.findAll({
-        attributes: ['lecturer_profile_id', [Sequelize.fn('COUNT', Sequelize.col('LecturerCourse.id')), 'cnt']],
-        where: { lecturer_profile_id: { [Op.in]: profileIds } },
-        group: ['lecturer_profile_id']
-      });
-      counts.forEach(c=> countsMap.set(c.lecturer_profile_id, parseInt(c.get('cnt'),10)||0));
+      if (req.user?.role === 'admin' && req.user.department_name) {
+        const dept = await Department.findOne({ where: { dept_name: req.user.department_name } });
+        if (dept) {
+          // Count only courses from the admin's department
+          const counts = await LecturerCourse.findAll({
+            attributes: ['lecturer_profile_id', [Sequelize.fn('COUNT', Sequelize.col('LecturerCourse.id')), 'cnt']],
+            where: { lecturer_profile_id: { [Op.in]: profileIds } },
+            include: [{
+              model: Course,
+              where: { dept_id: dept.id },
+              attributes: []
+            }],
+            group: ['lecturer_profile_id']
+          });
+          counts.forEach(c=> countsMap.set(c.lecturer_profile_id, parseInt(c.get('cnt'),10)||0));
+        }
+      } else {
+        // For superadmins, count all courses
+        const counts = await LecturerCourse.findAll({
+          attributes: ['lecturer_profile_id', [Sequelize.fn('COUNT', Sequelize.col('LecturerCourse.id')), 'cnt']],
+          where: { lecturer_profile_id: { [Op.in]: profileIds } },
+          group: ['lecturer_profile_id']
+        });
+        counts.forEach(c=> countsMap.set(c.lecturer_profile_id, parseInt(c.get('cnt'),10)||0));
+      }
     }
 
-    // Fetch LecturerCourse rows with Course include so we can attach course objects per profile
+    // Fetch LecturerCourse rows with Course include (filter by department for admins)
     let coursesMap = new Map();
     if (profileIds.length) {
+      let courseInclude = [{ 
+        model: Course, 
+        attributes: ['id','course_code','course_name','dept_id'] 
+      }];
+
+      // For department admins, filter courses to only show courses from their department
+      if (req.user?.role === 'admin' && req.user.department_name) {
+        const dept = await Department.findOne({ where: { dept_name: req.user.department_name } });
+        if (dept) {
+          courseInclude[0].where = { dept_id: dept.id };
+          courseInclude[0].required = false; // Use LEFT JOIN to still show lecturers even if no courses in this department
+        }
+      }
+
       const lcRows = await LecturerCourse.findAll({
         where: { lecturer_profile_id: { [Op.in]: profileIds } },
-        include: [{ model: Course, attributes: ['id','course_code','course_name'] }],
+        include: courseInclude,
         order: [['id','ASC']]
       });
+      
       lcRows.forEach(lc => {
         const pid = lc.lecturer_profile_id;
-        const courseObj = lc.Course ? { id: lc.Course.id, course_code: lc.Course.course_code, course_name: lc.Course.course_name } : null;
+        const courseObj = lc.Course ? { 
+          id: lc.Course.id, 
+          course_code: lc.Course.course_code, 
+          course_name: lc.Course.course_name,
+          dept_id: lc.Course.dept_id 
+        } : null;
         if (!coursesMap.has(pid)) coursesMap.set(pid, []);
         if (courseObj) coursesMap.get(pid).push(courseObj);
       });
@@ -89,13 +149,23 @@ export const getLecturers = async (req, res) => {
 
   const data = rows.map(lp => {
       const name = lp.full_name_english || lp.full_name_khmer || lp.User?.display_name || (lp.User?.email ? lp.User.email.split('@')[0].replace(/\./g,' ') : 'Unknown');
+      // For department admins, show their department instead of lecturer's original department
+      const displayDepartment = req.user?.role === 'admin' && req.user.department_name 
+        ? req.user.department_name 
+        : lp.User?.department_name || 'General';
+      
+      // Get research fields from the new relationship, fallback to legacy comma-separated field
+      const researchFields = lp.ResearchFields && lp.ResearchFields.length > 0 
+        ? lp.ResearchFields.map(rf => rf.name)
+        : (lp.research_fields ? lp.research_fields.split(',').map(s=>s.trim()).filter(Boolean) : []);
+      
       return {
         id: lp.User?.id,
         lecturerProfileId: lp.id,
         name,
         email: lp.User?.email,
         role: 'lecturer',
-        department: lp.User?.department_name || 'General',
+        department: displayDepartment,
         status: lp.User?.status || 'active',
         lastLogin: lp.User?.last_login || 'Never',
         employeeId: lp.employee_id,
@@ -105,7 +175,8 @@ export const getLecturers = async (req, res) => {
   coursesCount: countsMap.get(lp.id) || 0,
   // attach course objects when available so UI can show names
   courses: (coursesMap && coursesMap.get(lp.id)) || [],
-  specializations: lp.research_fields ? lp.research_fields.split(',').map(s=>s.trim()).filter(Boolean).slice(0,5) : []
+  specializations: researchFields.slice(0,5),
+  researchFields: researchFields
       };
     });
 
@@ -130,20 +201,52 @@ export const getLecturerDetail = async (req, res) => {
   try {
     const userId = parseInt(req.params.id,10);
     if(!userId) return res.status(400).json({ message: 'Invalid id' });
-    const profile = await LecturerProfile.findOne({
+    
+    // Build course include with department filtering for admins
+    let lecturerCourseInclude = [{ 
+      model: Course, 
+      attributes: ['id','course_code','course_name','dept_id','hours','credits'] 
+    }];
+    
+    // For department admins, filter courses to only show courses from their department
+    if (req.user?.role === 'admin' && req.user.department_name) {
+      const dept = await Department.findOne({ where: { dept_name: req.user.department_name } });
+      if (dept) {
+        lecturerCourseInclude[0].where = { dept_id: dept.id };
+        lecturerCourseInclude[0].required = false; // Use LEFT JOIN to still show lecturer even if no courses in this department
+      }
+    }
+    
+  const profile = await LecturerProfile.findOne({
       where: { user_id: userId },
       include: [
         { model: User, attributes: ['id','email','status','department_name','last_login'] },
         { model: Department, attributes: ['id','dept_name'], through: { attributes: [] } },
-        { model: LecturerCourse, include: [{ model: Course, attributes: ['id','course_code','course_name','dept_id','hours','credits'] }] }
+        { model: LecturerCourse, include: lecturerCourseInclude }
       ]
     });
     if(!profile) return res.status(404).json({ message: 'Lecturer not found' });
-    // Department access control: admin can only view lecturers in their own department
-    if (req.user?.role === 'admin' && req.user.department_name && profile.User?.department_name !== req.user.department_name) {
-      return res.status(403).json({ message: 'Access denied: different department' });
+    
+    // Updated access control: admin can view lecturers who teach courses in their department
+    if (req.user?.role === 'admin' && req.user.department_name) {
+      const dept = await Department.findOne({ where: { dept_name: req.user.department_name } });
+      if (dept) {
+        // Check if this lecturer teaches any courses in the admin's department
+        const hasCoursesInDepartment = await LecturerCourse.findOne({
+          where: { lecturer_profile_id: profile.id },
+          include: [{
+            model: Course,
+            where: { dept_id: dept.id },
+            attributes: ['id']
+          }]
+        });
+        
+        if (!hasCoursesInDepartment) {
+          return res.status(403).json({ message: 'Access denied: lecturer does not teach in your department' });
+        }
+      }
     }
-    const departments = profile.Departments?.map(d=> ({ id: d.id, name: d.dept_name })) || [];
+  const departments = profile.Departments?.map(d=> ({ id: d.id, name: d.dept_name })) || [];
     const courses = profile.LecturerCourses?.map(lc=> ({
       id: lc.Course?.id,
       course_id: lc.Course?.id,
@@ -153,17 +256,54 @@ export const getLecturerDetail = async (req, res) => {
       credits: lc.Course?.credits,
       dept_id: lc.Course?.dept_id
     })) || [];
+    
+    // For department admins, show their department instead of lecturer's original department
+    const displayDepartment = req.user?.role === 'admin' && req.user.department_name 
+      ? req.user.department_name 
+      : profile.User?.department_name || 'General';
+
+    // Lookup candidate by cleaned full name, fallback to email
+    let candidateId = null;
+    let hourlyRateThisYear = null;
+    try {
+      const titleRegex = /^(mr\.?|ms\.?|mrs\.?|dr\.?|prof\.?|professor|miss)\s+/i;
+      const normalizeName = (s='') => String(s).trim().replace(titleRegex,'').replace(/\s+/g,' ').trim();
+      const rawName = profile.full_name_english || profile.User?.display_name || '';
+      const cleaned = normalizeName(rawName);
+      let cand = null;
+      if (cleaned) {
+        const cleanedLower = cleaned.toLowerCase();
+        cand = await Candidate.findOne({
+          where: Sequelize.where(Sequelize.fn('LOWER', Sequelize.fn('TRIM', Sequelize.col('fullName'))), cleanedLower)
+        });
+      }
+      if (!cand && profile.User?.email) {
+        cand = await Candidate.findOne({ where: { email: profile.User.email } });
+      }
+      if (cand) {
+        candidateId = cand.id;
+        if (cand.hourlyRate != null) hourlyRateThisYear = String(cand.hourlyRate);
+      }
+    } catch (candErr) {
+      console.warn('[getLecturerDetail] candidate lookup failed:', candErr.message);
+    }
+    
     return res.json({
       id: profile.User?.id,
       lecturerProfileId: profile.id,
-      name: `${profile.first_name} ${profile.last_name}`.trim(),
+      name: profile.full_name_english || profile.full_name_khmer || profile.User?.display_name || 'Unknown',
       email: profile.User?.email,
       status: profile.User?.status,
-      department: profile.User?.department_name,
+      department: displayDepartment,
+      position: profile.position,
+  occupation: profile.occupation || null,
+  place: profile.place || null,
       phone: profile.phone_number || null,
       departments,
       courses,
       coursesCount: courses.length,
+      candidateId,
+      hourlyRateThisYear,
       // Derive a single education entry from normalized profile columns so UI (which expects an array) can render it
       education: (profile.latest_degree || profile.university || profile.major || profile.degree_year) ? [
         {
@@ -209,10 +349,58 @@ export const updateLecturerCourses = async (req, res) => {
     if(!courseIds.length) {
       return res.status(400).json({ message: 'At least one course id required' });
     }
+    
     const profile = await LecturerProfile.findOne({ where: { user_id: userId } });
     if(!profile) return res.status(404).json({ message: 'Lecturer not found' });
-    const courses = await Course.findAll({ where: { id: courseIds } });
-    await LecturerCourse.destroy({ where: { lecturer_profile_id: profile.id } });
+    
+    // For department admins, validate that all courses belong to their department
+    let coursesWhere = { id: courseIds };
+    if (req.user?.role === 'admin' && req.user.department_name) {
+      const dept = await Department.findOne({ where: { dept_name: req.user.department_name } });
+      if (!dept) {
+        return res.status(400).json({ message: 'Your department not found' });
+      }
+      coursesWhere.dept_id = dept.id;
+    }
+    
+    const courses = await Course.findAll({ where: coursesWhere });
+    
+    // Validate that all requested courses were found (and belong to admin's department if applicable)
+    if (courses.length !== courseIds.length) {
+      const foundIds = courses.map(c => c.id);
+      const missingIds = courseIds.filter(id => !foundIds.includes(id));
+      return res.status(400).json({ 
+        message: req.user?.role === 'admin' 
+          ? 'Some courses not found in your department or do not exist' 
+          : 'Some courses not found',
+        missingIds 
+      });
+    }
+    
+    // For department admins, only destroy courses from their own department
+    // This allows lecturers to have courses from multiple departments simultaneously
+    if (req.user?.role === 'admin' && req.user.department_name) {
+      const dept = await Department.findOne({ where: { dept_name: req.user.department_name } });
+      if (dept) {
+        // Only destroy LecturerCourse entries for courses in this admin's department
+        const existingCoursesInDept = await LecturerCourse.findAll({
+          where: { lecturer_profile_id: profile.id },
+          include: [{
+            model: Course,
+            where: { dept_id: dept.id },
+            attributes: ['id']
+          }]
+        });
+        const existingIds = existingCoursesInDept.map(lc => lc.id);
+        if (existingIds.length > 0) {
+          await LecturerCourse.destroy({ where: { id: existingIds } });
+        }
+      }
+    } else {
+      // Superadmins can destroy all lecturer courses
+      await LecturerCourse.destroy({ where: { lecturer_profile_id: profile.id } });
+    }
+    
     await LecturerCourse.bulkCreate(courses.map(c=> ({ lecturer_profile_id: profile.id, course_id: c.id })));
     return res.json({ message: 'Courses updated', count: courses.length, course_ids: courses.map(c=>c.id) });
   } catch (e) {
@@ -223,7 +411,7 @@ export const updateLecturerCourses = async (req, res) => {
 
 /**
  * PATCH /api/lecturers/:id/profile
- * Body: { qualifications?, research_fields? (array|string) }
+ * Body: { qualifications?, research_fields? (array|string), university?, major? }
  */
 export const updateLecturerProfile = async (req, res) => {
   try {
@@ -231,17 +419,79 @@ export const updateLecturerProfile = async (req, res) => {
     if(!userId) return res.status(400).json({ message: 'Invalid id' });
     const profile = await LecturerProfile.findOne({ where: { user_id: userId } });
     if(!profile) return res.status(404).json({ message: 'Lecturer not found' });
-  const { qualifications, research_fields, phone_number } = req.body;
+    
+    const { qualifications, research_fields, phone_number, university, major } = req.body;
     const patch = {};
+    
     if(typeof qualifications === 'string') patch.qualifications = qualifications;
-    if(research_fields) {
-      if(Array.isArray(research_fields)) patch.research_fields = research_fields.map(s=> String(s).trim()).filter(Boolean).join(',');
-      else if(typeof research_fields === 'string') patch.research_fields = research_fields;
+    if(typeof phone_number === 'string') patch.phone_number = phone_number.trim();
+    
+    // Handle research fields
+    if (research_fields) {
+      let fieldNames = [];
+      
+      if (Array.isArray(research_fields)) {
+        fieldNames = research_fields.map(s => String(s).trim()).filter(Boolean);
+      } else if (typeof research_fields === 'string') {
+        fieldNames = research_fields.split(',').map(s => s.trim()).filter(Boolean);
+      }
+      
+      if (fieldNames.length > 0) {
+        // Ensure all research fields exist in the database
+        await findOrCreateResearchFields(fieldNames);
+        
+        // Store as comma-separated string
+        patch.research_fields = fieldNames.join(', ');
+      } else {
+        // Clear research fields
+        patch.research_fields = '';
+      }
     }
-  if(typeof phone_number === 'string') patch.phone_number = phone_number.trim();
-  if(Object.keys(patch).length === 0) return res.status(400).json({ message: 'No updatable fields supplied' });
+
+    // Handle university
+    if (university !== undefined) {
+      if (typeof university === 'string' && university.trim()) {
+        const trimmedUniversity = university.trim();
+        // Ensure university exists in the database
+        await findOrCreateUniversities([trimmedUniversity]);
+        patch.university = trimmedUniversity;
+      } else {
+        // Clear university
+        patch.university = null;
+      }
+    }
+
+    // Handle major
+    if (major !== undefined) {
+      if (typeof major === 'string' && major.trim()) {
+        const trimmedMajor = major.trim();
+        // Ensure major exists in the database
+        await findOrCreateMajors([trimmedMajor]);
+        patch.major = trimmedMajor;
+      } else {
+        // Clear major
+        patch.major = null;
+      }
+    }
+    
+    if(Object.keys(patch).length === 0) {
+      return res.status(400).json({ message: 'No updatable fields supplied' });
+    }
+    
     await profile.update(patch);
-    return res.json({ message: 'Profile updated', qualifications: profile.qualifications, research_fields: profile.research_fields });
+    
+    const currentResearchFields = profile.research_fields 
+      ? profile.research_fields.split(',').map(s => s.trim()).filter(Boolean)
+      : [];
+    
+    return res.json({ 
+      message: 'Profile updated', 
+      qualifications: profile.qualifications, 
+      research_fields: profile.research_fields,
+      researchFields: currentResearchFields,
+      university: profile.university,
+      major: profile.major
+    });
   } catch (e) {
     console.error('[updateLecturerProfile] error', e);
     return res.status(500).json({ message: 'Failed to update lecturer profile', error: e.message });

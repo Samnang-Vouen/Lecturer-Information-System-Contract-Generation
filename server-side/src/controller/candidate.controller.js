@@ -1,5 +1,5 @@
 import Candidate from '../model/candidate.model.js';
-import { Department } from '../model/user.model.js';
+import { Department } from '../model/index.js';
 
 // GET /api/candidates - list all candidates
 export const getCandidates = async (req, res) => {

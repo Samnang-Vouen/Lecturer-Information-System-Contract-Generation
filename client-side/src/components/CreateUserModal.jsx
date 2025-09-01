@@ -17,7 +17,7 @@ export default function CreateUserModal({ isOpen, onClose, onUserCreated }) {
 
   // Role and department options
   const roleOptions = ["admin", "management"];
-  const departmentOptions = ["Computer Science", "Digital Business", "Telecommunications and Network", "Administration"];
+  const departmentOptions = ["Computer Science", "Digital Business", "Foundation","Telecommunications and Network"];
 
   const handleChange = (e) => {
     const { name, value } = e.target;
