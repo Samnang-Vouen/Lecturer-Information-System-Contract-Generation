@@ -49,8 +49,16 @@ export default function Recruitment() {
   const [editQuestionDebounceTimer, setEditQuestionDebounceTimer] = useState(null);
   // Candidate search query
   const [candidateSearch, setCandidateSearch] = useState('');
+  // Helpers to normalize & validate phone numbers to E.164 (+[countryCode][subscriberNumber], max 15 digits)
+  const toE164 = (raw, dialCode) => {
+    const digits = String(raw || '').replace(/\D/g, '');
+    const dc = String(dialCode || '').replace(/\D/g, '');
+    const withDial = digits.startsWith(dc) ? digits : `${dc}${digits}`;
+    return withDial ? `+${withDial}` : '';
+  };
+  const isE164 = (val) => /^\+\d{8,15}$/.test(String(val || ''));
 
-  const [newCandidate, setNewCandidate] = useState({ fullName: '', email: '', phone: '855', positionAppliedFor: '', interviewDate: '' });
+  const [newCandidate, setNewCandidate] = useState({ fullName: '', email: '', phone: '+855', positionAppliedFor: '', interviewDate: '' });
   const [finalDecision, setFinalDecision] = useState({ hourlyRate: '', rateReason: '', evaluator: '' });
   const [rejectionReason, setRejectionReason] = useState('');
   const [submitAttempted, setSubmitAttempted] = useState(false);
@@ -77,7 +85,7 @@ export default function Recruitment() {
   }, [selectedCandidate]);
 
   const allFilled = ['fullName','email','phone','positionAppliedFor','interviewDate']
-    .every((k) => String(newCandidate[k] || '').trim() !== '');
+    .every((k) => String(newCandidate[k] || '').trim() !== '') && isE164(newCandidate.phone);
 
   // Load candidates & interview question categories from backend
   const fetchCandidates = async (nextPage = 1) => {
@@ -141,12 +149,17 @@ export default function Recruitment() {
       return;
     }
     
-    // Validate phone number
+    // Normalize & validate phone number to E.164
+    let phoneE164;
     try {
-      const phoneValid = isValidPhoneNumber('+' + newCandidate.phone);
-      if (!phoneValid) {
-        toast.error('Please enter a valid phone number');
+      phoneE164 = isE164(newCandidate.phone) ? newCandidate.phone : toE164(newCandidate.phone, '855');
+      if (!isValidPhoneNumber(phoneE164)) {
+        toast.error('Please enter a valid phone number in international format');
         return;
+      }
+      // Ensure state holds normalized value before submit
+      if (newCandidate.phone !== phoneE164) {
+        setNewCandidate((prev) => ({ ...prev, phone: phoneE164 }));
       }
     } catch (error) {
       toast.error('Please enter a valid phone number');
@@ -154,11 +167,13 @@ export default function Recruitment() {
     }
 
     try {
-  const { data } = await axiosInstance.post('/candidates', newCandidate);
+  // Ensure payload uses normalized E.164 phone
+  const payloadToSend = { ...newCandidate, phone: phoneE164 || newCandidate.phone };
+  const { data } = await axiosInstance.post('/candidates', payloadToSend);
   setCandidates((prev) => [data, ...prev]);
   // keep pagination meta consistent (might have grown total) just allow hasMore true
   if (!hasMore) setHasMore(true);
-      setNewCandidate({ fullName: '', email: '', phone: '855', positionAppliedFor: '', interviewDate: '' });
+  setNewCandidate({ fullName: '', email: '', phone: '+855', positionAppliedFor: '', interviewDate: '' });
       setSubmitAttempted(false);
       toast.success('Candidate added');
     } catch (e) {
@@ -548,8 +563,11 @@ export default function Recruitment() {
                         <label className="block text-sm font-medium text-gray-700">Phone</label>
                         <PhoneInput
                           country={'kh'}
-                          value={newCandidate.phone}
-                          onChange={(phone) => setNewCandidate({ ...newCandidate, phone })}
+                          value={(newCandidate.phone || '').replace(/^\+/, '')}
+                          onChange={(phone, country) => {
+                            const e164 = toE164(phone, country?.dialCode);
+                            setNewCandidate({ ...newCandidate, phone: e164 });
+                          }}
                           enableSearch={true}
                           disableSearchIcon={false}
                           containerStyle={{
@@ -559,13 +577,13 @@ export default function Recruitment() {
                             width: '100%',
                             height: '40px',
                             fontSize: '14px',
-                            border: submitAttempted && !newCandidate.phone.trim() ? '1px solid #ef4444' : '1px solid #d1d5db',
+                            border: submitAttempted && !isE164(newCandidate.phone) ? '1px solid #ef4444' : '1px solid #d1d5db',
                             borderRadius: '0.375rem',
                             paddingLeft: '52px',
                             backgroundColor: '#ffffff'
                           }}
                           buttonStyle={{
-                            border: submitAttempted && !newCandidate.phone.trim() ? '1px solid #ef4444' : '1px solid #d1d5db',
+                            border: submitAttempted && !isE164(newCandidate.phone) ? '1px solid #ef4444' : '1px solid #d1d5db',
                             borderRadius: '0.375rem 0 0 0.375rem',
                             backgroundColor: '#f9fafb',
                             borderRight: 'none'
@@ -577,8 +595,8 @@ export default function Recruitment() {
                           }}
                           placeholder="Enter phone number"
                         />
-                        {submitAttempted && !newCandidate.phone.trim() && (
-                          <p className="text-xs text-red-600">This field is required</p>
+                        {submitAttempted && !isE164(newCandidate.phone) && (
+                          <p className="text-xs text-red-600">Enter a valid phone in international format (e.g., +85512345678)</p>
                         )}
                       </div>
                       <div className="space-y-2">
@@ -876,11 +894,25 @@ export default function Recruitment() {
                               </div>
                               <div className="space-y-2">
                                 <label className="block text-sm font-medium text-gray-700">Reason for Rate</label>
-                                <Textarea value={finalDecision.rateReason} onChange={(e) => setFinalDecision({ ...finalDecision, rateReason: e.target.value })} placeholder="Explain the reasoning for the hourly rate..." rows={3} />
+                                <Textarea
+                                  value={finalDecision.rateReason}
+                                  onChange={(e) => setFinalDecision({ ...finalDecision, rateReason: (e.target.value || '').slice(0,160) })}
+                                  placeholder="Explain the reasoning for the hourly rate..."
+                                  rows={3}
+                                  maxLength={160}
+                                />
+                                <div className="mt-1 text-[11px] text-gray-500 text-right">{(finalDecision.rateReason || '').length}/160</div>
                               </div>
                               <div className="space-y-2">
                                 <label className="block text-sm font-medium text-gray-700">Rejection Reason (if rejecting)</label>
-                                <Textarea value={rejectionReason} onChange={(e) => setRejectionReason(e.target.value)} placeholder="Enter reason for rejection..." rows={3} />
+                                <Textarea
+                                  value={rejectionReason}
+                                  onChange={(e) => setRejectionReason((e.target.value || '').slice(0,160))}
+                                  placeholder="Enter reason for rejection..."
+                                  rows={3}
+                                  maxLength={160}
+                                />
+                                <div className="mt-1 text-[11px] text-gray-500 text-right">{(rejectionReason || '').length}/160</div>
                               </div>
                               <div className="flex justify-end gap-4">
                                 <Button onClick={rejectCandidate} variant="outline" className="text-red-600 border-red-600 hover:bg-red-50"><XCircle className="w-4 h-4 mr-2" />Reject Candidate</Button>
