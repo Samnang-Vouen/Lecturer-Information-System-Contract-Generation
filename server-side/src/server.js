@@ -153,9 +153,15 @@ app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
 //   SQL_LOG=true           -> enable raw SQL logging (configured in db.js)
 (async () => {
   try {
-    // Always create or update all tables on server start
-    await sequelize.sync({ alter: true });
-    console.log('[startup] Database synchronized (all tables created/updated)');
+    // Use alter:true only if DB_ALTER_SYNC is set, otherwise use safe sync
+    const alterSync = process.env.DB_ALTER_SYNC === 'true';
+    if (alterSync) {
+      await sequelize.sync({ alter: true });
+      console.log('[startup] Database synchronized (alter mode)');
+    } else {
+      await sequelize.sync();
+      console.log('[startup] Database synchronized (safe mode)');
+    }
 
     await seedInterviewQuestions(); // seeder has its own flag checks
     await seedResearchFields(); // seed research fields if empty
