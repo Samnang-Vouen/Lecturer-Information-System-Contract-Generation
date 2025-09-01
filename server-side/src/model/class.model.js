@@ -1,6 +1,5 @@
 import sequelize from '../config/db.js';
 import { DataTypes } from 'sequelize';
-import { Department } from './user.model.js';
 
 const ClassModel = sequelize.define('Class', {
   id: { type: DataTypes.INTEGER.UNSIGNED, primaryKey: true, autoIncrement: true },
@@ -34,8 +33,5 @@ const ClassModel = sequelize.define('Class', {
   createdAt: 'created_at',
   updatedAt: 'updated_at'
 });
-
-ClassModel.belongsTo(Department, { foreignKey: 'dept_id', onDelete: 'CASCADE', onUpdate: 'CASCADE' });
-Department.hasMany(ClassModel, { foreignKey: 'dept_id' });
 
 export default ClassModel;

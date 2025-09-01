@@ -1,8 +1,5 @@
 import { DataTypes } from 'sequelize';
 import sequelize from '../config/db.js';
-import Course from './course.model.js';
-import ClassModel from './class.model.js';
-import { LecturerProfile, Department } from './user.model.js';
 
 // Represents an assignment (or potential assignment) of a lecturer to teach a course for a class (group count etc.)
 const CourseMapping = sequelize.define('CourseMapping', {
@@ -27,15 +24,5 @@ const CourseMapping = sequelize.define('CourseMapping', {
   createdAt: 'created_at',
   updatedAt: 'updated_at'
 });
-
-// Associations
-CourseMapping.belongsTo(ClassModel, { foreignKey: 'class_id', onDelete: 'CASCADE', onUpdate: 'CASCADE' });
-ClassModel.hasMany(CourseMapping, { foreignKey: 'class_id' });
-CourseMapping.belongsTo(Course, { foreignKey: 'course_id', onDelete: 'CASCADE', onUpdate: 'CASCADE' });
-Course.hasMany(CourseMapping, { foreignKey: 'course_id' });
-CourseMapping.belongsTo(LecturerProfile, { foreignKey: 'lecturer_profile_id', onDelete: 'SET NULL', onUpdate: 'CASCADE' });
-LecturerProfile.hasMany(CourseMapping, { foreignKey: 'lecturer_profile_id' });
-CourseMapping.belongsTo(Department, { foreignKey: 'dept_id', onDelete: 'SET NULL', onUpdate: 'CASCADE' });
-Department.hasMany(CourseMapping, { foreignKey: 'dept_id' });
 
 export default CourseMapping;

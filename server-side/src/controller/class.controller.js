@@ -1,5 +1,5 @@
 import ClassModel from '../model/class.model.js';
-import { Department } from '../model/user.model.js';
+import { Department } from '../model/index.js';
 
 const ClassController = {
   async getAllClasses(req, res) {

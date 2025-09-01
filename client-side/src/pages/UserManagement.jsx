@@ -16,6 +16,7 @@ import Button from "../components/ui/Button";
 import Badge from "../components/ui/Badge";
 import Select, { SelectItem } from "../components/ui/Select";
 import { useSearchParams } from 'react-router-dom';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/Dialog";
 
 export default function UserManagement() {
     const { authUser, logout, isCheckingAuth } = useAuthStore();
@@ -400,24 +401,25 @@ export default function UserManagement() {
                 </div>
             </div>, document.body)}
 
-            {/* Delete Confirmation Modal */}
-            {isDeleteModalOpen && ReactDOM.createPortal(
-            <div className="fixed inset-0 z-50">
-                <div className="absolute inset-0 bg-black/50" onClick={cancelDelete} />
-                <div className="relative w-full h-full flex items-center justify-center p-4 pointer-events-none">
-                <div className="bg-white rounded-lg shadow-xl w-full max-w-sm p-6 space-y-5 pointer-events-auto">
-                    <div className="flex items-start justify-between">
-                    <h2 className="text-lg font-semibold text-gray-900">Confirm Delete</h2>
-                    <button onClick={cancelDelete} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5"/></button>
-                    </div>
-                    <p className="text-sm text-gray-600">Are you sure you want to delete user <span className="font-medium">{userToDelete?.email}</span>? This action cannot be undone.</p>
-                    <div className="flex gap-3 pt-2">
-                    <Button onClick={confirmDelete} className="flex-1 bg-red-600 hover:bg-red-700">OK</Button>
-                    <Button variant="outline" onClick={cancelDelete} className="flex-1">Cancel</Button>
-                    </div>
-                </div>
-                </div>
-            </div>, document.body)}
+                        {/* Delete Confirmation Dialog */}
+                        {isDeleteModalOpen && userToDelete && (
+                            <Dialog open={isDeleteModalOpen} onOpenChange={(open)=> { setIsDeleteModalOpen(open); if (!open) setUserToDelete(null); }}>
+                                <DialogContent>
+                                    <DialogHeader>
+                                        <DialogTitle>Confirm Deletion</DialogTitle>
+                                    </DialogHeader>
+                                    <div className="px-2 pb-2 text-center space-y-4">
+                                        <p className="text-sm text-gray-700">
+                                            Do you want to delete this {userToDelete?.name || userToDelete?.email}?
+                                        </p>
+                                        <div className="flex flex-col sm:flex-row gap-2 sm:justify-center">
+                                            <Button onClick={confirmDelete} className="bg-red-600 hover:bg-red-700 text-white sm:min-w-[120px]">OK</Button>
+                                            <Button variant="outline" onClick={cancelDelete} className="sm:min-w-[120px]">Cancel</Button>
+                                        </div>
+                                    </div>
+                                </DialogContent>
+                            </Dialog>
+                        )}
 
             {/* Floating Action Menu */}
             {openMenuId && (() => { const user = users.find(u=>u.id===openMenuId); if(!user) return null; return (

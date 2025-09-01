@@ -1,5 +1,6 @@
 import { Op } from 'sequelize';
-import { InterviewQuestion, CandidateQuestion } from '../model/interviewQuestion.model.js';
+import { InterviewQuestion } from '../model/interviewQuestion.model.js';
+import { CandidateQuestion } from '../model/candidateQuestion.model.js';
 import { activeInterviewCategories } from '../utils/seedInterviewQuestions.js';
 import Candidate from '../model/candidate.model.js';
 
@@ -116,24 +117,38 @@ export const addCandidateQuestion = async (req, res) => {
 export const getCandidateInterviewDetails = async (req, res) => {
   try {
     const { id } = req.params;
-    // Pull all candidate question rows joined with question text & category
-    const rows = await CandidateQuestion.findAll({
-      where: { candidate_id: id },
-      order: [['created_at','ASC']]
+    
+    // Use Sequelize associations for efficient joins
+    const candidateWithResponses = await Candidate.findByPk(id, {
+      include: [{
+        model: CandidateQuestion,
+        as: 'interviewResponses',
+        include: [{
+          model: InterviewQuestion,
+          as: 'question',
+          attributes: ['id', 'question_text', 'category']
+        }],
+        order: [['created_at', 'ASC']]
+      }]
     });
-    if (!rows.length) return res.json({ candidate_id: id, responses: [] });
-    // Fetch distinct questions
-    const qIds = [...new Set(rows.map(r => r.question_id))];
-    const questions = await InterviewQuestion.findAll({ where: { id: qIds } });
-    const qMap = new Map(questions.map(q => [q.id, q]));
-    const responses = rows.map(r => ({
-      id: r.id,
-      question_id: r.question_id,
-      question_text: qMap.get(r.question_id)?.question_text || '',
-      category: qMap.get(r.question_id)?.category || '',
-      rating: r.rating ? Number(r.rating) : null,
-      noted: r.noted,
-      created_at: r.created_at
+
+    if (!candidateWithResponses) {
+      return res.status(404).json({ message: 'Candidate not found' });
+    }
+
+    if (!candidateWithResponses.interviewResponses || candidateWithResponses.interviewResponses.length === 0) {
+      return res.json({ candidate_id: id, responses: [] });
+    }
+
+    // Transform the response data
+    const responses = candidateWithResponses.interviewResponses.map(response => ({
+      id: response.id,
+      question_id: response.question_id,
+      question_text: response.question?.question_text || '',
+      category: response.question?.category || '',
+      rating: response.rating ? Number(response.rating) : null,
+      noted: response.noted,
+      created_at: response.created_at
     }));
     res.json({ candidate_id: id, responses });
   } catch (e) {

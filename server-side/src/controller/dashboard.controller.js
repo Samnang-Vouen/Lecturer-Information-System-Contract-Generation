@@ -3,7 +3,7 @@
 // import User from '../model/user.model.js';
 // import Candidate from '../model/candidate.model.js';
 
-import { User, Role, UserRole, LecturerProfile } from '../model/user.model.js';
+import { User, Role, UserRole, LecturerProfile } from '../model/index.js';
 import { Op, Sequelize } from 'sequelize';
 
 /**

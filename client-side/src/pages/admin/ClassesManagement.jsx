@@ -8,6 +8,7 @@ import axios from "../../lib/axios";
 import Button from "../../components/ui/Button";
 import Label from "../../components/ui/Label";
 import Select, { SelectItem } from "../../components/ui/Select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/Dialog";
 // Courses fetched from server-side endpoint
 // Stored in local state for assignment dialog
 
@@ -30,6 +31,9 @@ export default function ClassesManagement() {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isCourseAssignDialogOpen, setIsCourseAssignDialogOpen] = useState(false);
+  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
+  const [classToDelete, setClassToDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Form states
   const [newClass, setNewClass] = useState(initialClassState);
@@ -143,16 +147,31 @@ export default function ClassesManagement() {
       .finally(() => setLoading(false));
   };
 
-  // Delete class
-  const handleDeleteClass = (classId) => {
-    setLoading(true);
-    axios.delete(`/classes/${classId}`)
-      .then(() => {
-        setClasses(prev => prev.filter(c => c.id !== classId));
-        setError("");
-      })
-      .catch(() => setError("Failed to delete class."))
-      .finally(() => setLoading(false));
+  // Open confirm delete
+  const handleDeleteClass = (classOrId) => {
+    const cls = typeof classOrId === 'object' && classOrId !== null
+      ? classOrId
+      : classes.find(c => String(c.id) === String(classOrId));
+    if (!cls) return;
+    setClassToDelete(cls);
+    setIsConfirmDeleteOpen(true);
+  };
+
+  // Perform delete after confirmation
+  const performDeleteClass = async () => {
+    if (!classToDelete) return;
+    setDeleting(true);
+    try {
+      await axios.delete(`/classes/${classToDelete.id}`);
+      setClasses(prev => prev.filter(c => c.id !== classToDelete.id));
+      setError("");
+      setIsConfirmDeleteOpen(false);
+      setClassToDelete(null);
+    } catch (e) {
+      setError("Failed to delete class.");
+    } finally {
+      setDeleting(false);
+    }
   };
 
   // Assign courses
@@ -243,6 +262,34 @@ export default function ClassesManagement() {
           title="Academic Classes"
           description="Overview of all academic classes in your department"
         />
+        {/* Confirm Delete Dialog */}
+        {isConfirmDeleteOpen && classToDelete && (
+          <Dialog open={isConfirmDeleteOpen} onOpenChange={(open)=> { setIsConfirmDeleteOpen(open); if (!open) setClassToDelete(null); }}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Confirm Deletion</DialogTitle>
+              </DialogHeader>
+              <div className="px-2 pb-2 text-center space-y-4">
+                <p className="text-sm text-gray-700">
+                  Do you want to delete this {classToDelete?.name || 'class'}?
+                </p>
+                <div className="flex flex-col sm:flex-row gap-2 sm:justify-center">
+                  <Button
+                    onClick={performDeleteClass}
+                    className="bg-red-600 hover:bg-red-700 text-white sm:min-w-[120px]"
+                    disabled={deleting}
+                  >{deleting ? 'Deleting…' : 'OK'}</Button>
+                  <Button
+                    variant="outline"
+                    onClick={()=> { setIsConfirmDeleteOpen(false); setClassToDelete(null); }}
+                    className="sm:min-w-[120px]"
+                    disabled={deleting}
+                  >Cancel</Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
         <div ref={sentinelRef} className="h-10 flex items-center justify-center text-xs text-gray-500">
           {loading && hasMore && <span>Loading more...</span>}
           {!hasMore && !loading && <span className="text-gray-400">No more classes</span>}

@@ -1,7 +1,5 @@
 import sequelize from '../config/db.js';
 import { DataTypes } from 'sequelize';
-import Contract from './contract.model.js';
-import User from './user.model.js';
 
 const DigitalSignature = sequelize.define('DigitalSignature', {
   id: { type: DataTypes.INTEGER.UNSIGNED, primaryKey: true, autoIncrement: true },
@@ -16,11 +14,5 @@ const DigitalSignature = sequelize.define('DigitalSignature', {
   createdAt: 'created_at',
   updatedAt: 'updated_at'
 });
-
-DigitalSignature.belongsTo(Contract, { foreignKey: 'contract_id', onDelete: 'CASCADE', onUpdate: 'CASCADE' });
-Contract.hasMany(DigitalSignature, { foreignKey: 'contract_id' });
-
-DigitalSignature.belongsTo(User, { foreignKey: 'user_id', onDelete: 'CASCADE', onUpdate: 'CASCADE' });
-User.hasMany(DigitalSignature, { foreignKey: 'user_id' });
 
 export default DigitalSignature;

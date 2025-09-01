@@ -2,24 +2,23 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useAuthStore } from '../../store/useAuthStore';
 // Dynamic catalogs from backend instead of local static data
 import axiosInstance from '../../lib/axios';
+import { useResearchFields } from '../../hooks/useResearchFields';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import Label from '../../components/ui/Label';
 import Textarea from '../../components/ui/Textarea';
-import { Card } from '../../components/ui/Card';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import PhoneInput from 'react-phone-input-2';
 import 'react-phone-input-2/lib/style.css';
 import { parsePhoneNumberFromString } from 'libphonenumber-js';
-import researchFieldsSeed from '../../data/researchFieldsSeed';
-import universitiesInCambodia from '../../data/universitiesInCambodia';
+import { useUniversities } from '../../hooks/useUniversities';
+import { useMajors } from '../../hooks/useMajors';
 import {
   User,
   GraduationCap,
   Briefcase,
   Phone,
-  CheckCircle,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
@@ -45,6 +44,9 @@ export default function Onboarding(){
     .map(w=> w ? w[0].toUpperCase()+w.slice(1).toLowerCase() : '')
     .join(' ');
   const { authUser } = useAuthStore();
+  const { researchFields: researchFieldsAPI, createResearchField } = useResearchFields();
+  const { universities } = useUniversities();
+  const { majors } = useMajors();
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
@@ -160,29 +162,48 @@ export default function Onboarding(){
   },[formData.departments, departmentsCatalog, coursesCatalog]);
   const [researchFields, setResearchFields] = useState([]);
   const [newResearchField, setNewResearchField] = useState('');
-  // Suggestions computed from seed list filtered by typed text
+  // Suggestions computed from API research fields filtered by typed text
   const researchSuggestions = useMemo(() => {
     const q = String(newResearchField || '').trim().toLowerCase();
     if (!q) return [];
-    return researchFieldsSeed
+    return researchFieldsAPI
       .map(r => r.name)
       .filter(name => name.toLowerCase().includes(q) && !researchFields.includes(name))
       .slice(0, 8);
-  }, [newResearchField, researchFields]);
+  }, [newResearchField, researchFields, researchFieldsAPI]);
   // Autocomplete suggestions for university name
   const universitySuggestions = useMemo(() => {
     const q = String(formData.universityName || '').trim().toLowerCase();
     if (!q) return [];
-    return universitiesInCambodia
+    return universities
+      .map(u => u.name)
       .filter(u => u.toLowerCase().includes(q))
       .slice(0, 8);
-  }, [formData.universityName]);
+  }, [formData.universityName, universities]);
   // If the input exactly matches a known university, hide suggestions
   const universityHasExactMatch = useMemo(() => {
     const q = String(formData.universityName || '').trim().toLowerCase();
     if (!q) return false;
-    return universitiesInCambodia.some(u => u.toLowerCase() === q);
-  }, [formData.universityName]);
+    return universities.some(u => u.name.toLowerCase() === q);
+  }, [formData.universityName, universities]);
+  
+  // Autocomplete suggestions for major name
+  const majorSuggestions = useMemo(() => {
+    const q = String(formData.majorName || '').trim().toLowerCase();
+    if (!q) return [];
+    return majors
+      .map(m => m.name)
+      .filter(m => m.toLowerCase().includes(q))
+      .slice(0, 8);
+  }, [formData.majorName, majors]);
+  
+  // If the input exactly matches a known major, hide suggestions
+  const majorHasExactMatch = useMemo(() => {
+    const q = String(formData.majorName || '').trim().toLowerCase();
+    if (!q) return false;
+    return majors.some(m => m.name.toLowerCase() === q);
+  }, [formData.majorName, majors]);
+  
   // Prepare a simple list of country names from world-countries
   const countryList = useMemo(() => countries.map(c=> c.name.common).sort(), []);
   const countrySuggestions = useMemo(() => {
@@ -286,10 +307,26 @@ export default function Onboarding(){
     }
   };
 
-  const addResearchFieldValue = (value) => {
+  const addResearchFieldValue = async (value) => {
     const v = String(value || '').trim();
     if (!v) return;
     if (researchFields.includes(v)) return;
+    
+    // Check if this field exists in the API data
+    const existsInAPI = researchFieldsAPI.some(rf => rf.name.toLowerCase() === v.toLowerCase());
+    
+    if (!existsInAPI) {
+      try {
+        // Create new research field in the database
+        await createResearchField(v);
+        toast.success(`Added new research field: ${v}`);
+      } catch (error) {
+        console.error('Error creating research field:', error);
+        // Still allow adding locally even if API call fails
+        toast.error('Failed to save research field to database, but added locally');
+      }
+    }
+    
     setResearchFields(prev => [...prev, v]);
     setNewResearchField('');
   };
@@ -335,8 +372,8 @@ export default function Onboarding(){
       fd.append('full_name_english', formData.englishName || '');
       fd.append('full_name_khmer', formData.khmerName || '');
       fd.append('bank_name', formData.bankName || '');
-      fd.append('account_name', formData.accountName || '');
-      fd.append('account_number', formData.accountHolderName || '');
+      fd.append('account_name', formData.accountHolderName || '');
+      fd.append('account_number', formData.accountName || '');
       fd.append('short_bio', formData.shortBio || '');
       fd.append('university', formData.universityName || '');
       fd.append('country', formData.country || '');
@@ -346,8 +383,8 @@ export default function Onboarding(){
       fd.append('occupation', formData.occupation || '');
       fd.append('place', formData.placeOfWork || '');
       fd.append('phone_number', phoneE164 || formData.phoneNumber || '');
-      fd.append('personal_email', formData.personalEmail || '');
-      fd.append('position', 'Lecturer');
+  fd.append('personal_email', formData.personalEmail || '');
+  // Do not set position from lecturer onboarding; preserve admin-set position
       
       // Add research fields as comma-separated string
   fd.append('research_fields', researchFields.join(', '));
@@ -376,6 +413,27 @@ export default function Onboarding(){
       } else {
         toast.success('Onboarding completed successfully!');
       }
+      // Notify other open tabs (e.g., Admin Lecturer Management) to refresh immediately
+      try {
+        const payload = {
+          type: 'onboarding_complete',
+          userId: authUser?.id || res.data?.profile?.user_id || null,
+          profileId: res.data?.profile?.id || null,
+          timestamp: Date.now()
+        };
+        if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+          const bc = new BroadcastChannel('lecturer-updates');
+          bc.postMessage(payload);
+          // Close to avoid lingering connections
+          bc.close();
+        }
+        // Fallback for cross-tab communication
+        localStorage.setItem('lecturer-onboarding-update', JSON.stringify(payload));
+        // Clean up the flag shortly after to reduce clutter
+        setTimeout(() => {
+          try { localStorage.removeItem('lecturer-onboarding-update'); } catch {}
+        }, 300);
+      } catch {}
       navigate('/lecturer');
     } catch (error) {
       console.error(error);
@@ -772,13 +830,29 @@ export default function Onboarding(){
               </div>
               <div className="space-y-2">
                 <label className="block text-sm font-semibold text-gray-700">Major Name *</label>
-                <Input
-                  value={formData.majorName}
-                  onChange={(e) => updateForm('majorName', e.target.value)}
-                  placeholder="Enter your major"
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 min-h-[42px]"
-                />
+                <div className="relative">
+                  <Input
+                    value={formData.majorName}
+                    onChange={(e) => updateForm('majorName', e.target.value)}
+                    placeholder="Enter your major"
+                    required
+                    className="w-full"
+                  />
+                  {majorSuggestions.length > 0 && !majorHasExactMatch && (
+                    <div className="absolute left-0 right-0 z-50 mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-44 overflow-auto">
+                      {majorSuggestions.map(m => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => updateForm('majorName', m)}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100"
+                        >
+                          {m}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="space-y-2 -mt-1" ref={yearContainerRef}>
                 <Label htmlFor="graduationYear">Graduation Year *</Label>

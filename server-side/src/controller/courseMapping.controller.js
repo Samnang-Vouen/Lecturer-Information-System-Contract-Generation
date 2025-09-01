@@ -3,7 +3,8 @@ import { Op } from 'sequelize';
 import CourseMapping from '../model/courseMapping.model.js';
 import ClassModel from '../model/class.model.js';
 import Course from '../model/course.model.js';
-import { LecturerProfile, Department } from '../model/user.model.js';
+import { LecturerProfile, Department } from '../model/index.js';
+import ExcelJS from 'exceljs';
 
 // Helper to resolve department id based on admin's department
 async function resolveDeptId(req) {
@@ -141,5 +142,117 @@ export const deleteCourseMapping = async (req, res) => {
   } catch (e) {
     console.error('[deleteCourseMapping]', e);
     return res.status(500).json({ message: 'Failed to delete mapping', error: e.message });
+  }
+};
+
+// Generate an official Excel export with styling, large dataset support
+export const exportCourseMappings = async (req, res) => {
+  try {
+    const academicYear = (req.query.academic_year || '').trim();
+    const termStart = (req.query.term_start || '').trim();
+    const termEnd = (req.query.term_end || '').trim();
+    const deptId = await resolveDeptId(req);
+
+    const where = {};
+    if (deptId) where.dept_id = deptId;
+    if (academicYear) where.academic_year = academicYear;
+
+    const rows = await CourseMapping.findAll({
+      where,
+      include: [
+        { model: ClassModel, attributes: ['id','name','term','year_level','academic_year','total_class'] },
+        { model: Course, attributes: ['id','course_code','course_name','hours','credits'] },
+        { model: LecturerProfile, attributes: ['id','full_name_english','full_name_khmer'] }
+      ],
+      order: [[ClassModel, 'name', 'ASC'], ['term', 'ASC'], ['id', 'ASC']]
+    });
+
+    const workbook = new ExcelJS.Workbook();
+    const ws = workbook.addWorksheet('Course Mapping');
+
+    // Top header (merged)
+    ws.mergeCells('A1:P1');
+    const topHeader = `${academicYear || 'Academic Year'} | CADT | IDT | CS Department | Terms Operate`;
+    ws.getCell('A1').value = topHeader;
+    ws.getCell('A1').alignment = { horizontal: 'center', vertical: 'middle' };
+    ws.getCell('A1').font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 14 };
+    ws.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1F3251' } };
+    ws.getRow(1).height = 24;
+
+    // Term start row (merged)
+    ws.mergeCells('A2:P2');
+    const termLine = termStart && termEnd ? `► Term Start : ${termStart} - ${termEnd}` : '► Term Start : [start - end]';
+    ws.getCell('A2').value = termLine;
+    ws.getCell('A2').alignment = { horizontal: 'center' };
+    ws.getCell('A2').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFED7D31' } };
+    ws.getCell('A2').font = { bold: true, color: { argb: 'FFFFFFFF' } };
+
+    // Table header
+    const headers = [
+      'No','Subject','Hour','Credit','Total class','Lecturers and TAs','Group','Theory','Lab','Only15h','Only30h','Status','Availability','Survey Form','Contacted By','Comments'
+    ];
+    const headerRow = ws.addRow(headers);
+    headerRow.eachCell((cell) => {
+      cell.font = { bold: true };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'D9D9D9' } };
+      cell.border = { top:{style:'thin'}, left:{style:'thin'}, bottom:{style:'thin'}, right:{style:'thin'} };
+    });
+    ws.getRow(3).height = 18;
+
+    // Build data
+    let no = 1;
+    for (const r of rows) {
+      const cls = r.Class;
+      const crs = r.Course;
+      const lect = r.LecturerProfile;
+      const subject = crs ? `${crs.course_name}` : `Course #${r.course_id}`;
+      const hours = crs?.hours ?? '';
+      const credits = crs?.credits ?? '';
+      const totalClass = cls?.total_class ?? '';
+      const lecturerName = lect ? (lect.full_name_english || lect.full_name_khmer) : '';
+      const group = r.group_count ?? '';
+
+      // Derive flags from type_hours
+      const type = (r.type_hours || '').toLowerCase();
+      const theory = type.includes('theory') || type.includes('15h') ? 1 : '';
+      const lab = type.includes('lab') || type.includes('30h') ? 1 : '';
+      const only15h = /only\s*15h/i.test(r.type_hours || '') ? 1 : '';
+      const only30h = /only\s*30h/i.test(r.type_hours || '') ? 1 : '';
+
+      const status = r.status || '';
+      const availability = r.availability || '';
+      const survey = '';
+      const contactedBy = r.contacted_by || '';
+      const comments = r.comment || '';
+
+      const row = ws.addRow([
+        no++, subject, hours, credits, totalClass, lecturerName, group, theory, lab, only15h, only30h, status, availability, survey, contactedBy, comments
+      ]);
+
+      // Conditional fill for Status column (12)
+      const statusCell = row.getCell(12);
+      const st = String(status).toLowerCase();
+      if (st === 'pending') statusCell.fill = { type:'pattern', pattern:'solid', fgColor:{ argb:'FFFFC000' } };
+      if (st === 'rejected') statusCell.fill = { type:'pattern', pattern:'solid', fgColor:{ argb:'FFFF0000' } };
+      if (st === 'accepted') statusCell.fill = { type:'pattern', pattern:'solid', fgColor:{ argb:'FF00B050' } };
+
+      // Borders for all cells in this row
+      row.eachCell((cell) => {
+        cell.border = { top:{style:'thin'}, left:{style:'thin'}, bottom:{style:'thin'}, right:{style:'thin'} };
+      });
+    }
+
+    // Auto width
+    ws.columns = headers.map((h, i) => ({ header: h, key: `c${i}`, width: Math.max(12, String(h).length + 2) }));
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const fileName = `CourseMapping_${academicYear || 'All'}.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    return res.send(Buffer.from(buffer));
+  } catch (e) {
+    console.error('[exportCourseMappings]', e);
+    return res.status(500).json({ message: 'Failed to export course mappings', error: e.message });
   }
 };

@@ -1,9 +1,12 @@
 import fs from 'fs';
 import path from 'path';
 import multer from 'multer';
-import { LecturerProfile, User, Department } from '../model/user.model.js';
+import { LecturerProfile, User, Department } from '../model/index.js';
 import Course from '../model/course.model.js';
 import LecturerCourse from '../model/lecturerCourse.model.js';
+import { findOrCreateResearchFields } from './researchField.controller.js';
+import { findOrCreateUniversities } from './university.controller.js';
+import { findOrCreateMajors } from './major.controller.js';
 
 // Allow configuring max upload size from environment. Default to 25 MB per file.
 const MAX_UPLOAD_FILE_SIZE = parseInt(process.env.MAX_UPLOAD_FILE_SIZE || String(25 * 1024 * 1024), 10);
@@ -54,7 +57,8 @@ export const submitOnboarding = async (req, res) => {
       employee_id: existing?.employee_id || `EMP${Date.now().toString().slice(-6)}`,
       first_name: body.first_name || body.full_name_english?.split(' ')[0] || 'Unknown',
       last_name: body.last_name || body.full_name_english?.split(' ').slice(1).join(' ') || '',
-      position: body.position || 'Lecturer',
+      // Preserve existing position set by admin; only use provided body.position or default when creating new
+      position: existing?.position || (body.position || 'Lecturer'),
       join_date: new Date(),
       status: 'active',
       cv_uploaded: !!cv_path,
@@ -86,10 +90,44 @@ export const submitOnboarding = async (req, res) => {
 
     let profile;
     if(existing){
-      await existing.update(profilePayload);
+      // Avoid overwriting position unless explicitly provided in body
+      const { position, ...rest } = profilePayload;
+      const updatePayload = { ...rest };
+      if (typeof body.position === 'string' && body.position.trim()) {
+        updatePayload.position = body.position.trim();
+      }
+      await existing.update(updatePayload);
       profile = existing;
     } else {
       profile = await LecturerProfile.create(profilePayload);
+    }
+
+    // Handle research fields
+    if (body.research_fields) {
+      let fieldNames = [];
+      
+      if (Array.isArray(body.research_fields)) {
+        fieldNames = body.research_fields.map(s => String(s).trim()).filter(Boolean);
+      } else if (typeof body.research_fields === 'string') {
+        fieldNames = body.research_fields.split(',').map(s => s.trim()).filter(Boolean);
+      }
+      
+      if (fieldNames.length > 0) {
+        // Ensure all research fields exist in the database
+        await findOrCreateResearchFields(fieldNames);
+      }
+    }
+
+    // Handle university
+    if (body.university && typeof body.university === 'string' && body.university.trim()) {
+      // Ensure university exists in the database
+      await findOrCreateUniversities([body.university.trim()]);
+    }
+
+    // Handle major
+    if (body.major && typeof body.major === 'string' && body.major.trim()) {
+      // Ensure major exists in the database
+      await findOrCreateMajors([body.major.trim()]);
     }
 
     // Persist departments and courses with normalization (case/space tolerant)

@@ -311,15 +311,22 @@ export default function CoursesPage(){
       <Dialog open={confirmDeleteOpen} onOpenChange={(o)=>{ if(!o){ setConfirmDeleteOpen(false); setCourseToDelete(null);} }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete Course</DialogTitle>
+            <DialogTitle>Confirm Deletion</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
-            <p className="text-sm text-gray-600">Are you sure you want to delete the course <span className="font-semibold text-gray-900">{courseToDelete?.course_name}</span>? This action cannot be undone.</p>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={()=>{ setConfirmDeleteOpen(false); setCourseToDelete(null); }}>Cancel</Button>
-              <Button className="bg-red-600 hover:bg-red-700 text-white" onClick={()=> deleteCourse(courseToDelete.id)} disabled={deletingId===courseToDelete?.id}>
-                {deletingId===courseToDelete?.id ? <Loader2 className="h-4 w-4 animate-spin"/> : 'Delete'}
-              </Button>
+          <div className="space-y-4 text-center px-2 pb-2">
+            <p className="text-sm text-gray-700">Do you want to delete this {courseToDelete?.course_name}?</p>
+            <div className="flex flex-col sm:flex-row gap-2 sm:justify-center">
+              <Button
+                className="bg-red-600 hover:bg-red-700 text-white sm:min-w-[120px]"
+                onClick={()=> deleteCourse(courseToDelete.id)}
+                disabled={deletingId===courseToDelete?.id}
+              >{deletingId===courseToDelete?.id ? 'Deleting…' : 'OK'}</Button>
+              <Button
+                variant="outline"
+                onClick={()=>{ setConfirmDeleteOpen(false); setCourseToDelete(null); }}
+                className="sm:min-w-[120px]"
+                disabled={deletingId===courseToDelete?.id}
+              >Cancel</Button>
             </div>
           </div>
         </DialogContent>
