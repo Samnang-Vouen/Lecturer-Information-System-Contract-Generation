@@ -3,16 +3,16 @@ import sequelize from '../config/db.js';
 
 export const CandidateQuestion = sequelize.define('CandidateQuestion', {
     id: { 
-        type: DataTypes.INTEGER.UNSIGNED, 
+        type: DataTypes.BIGINT.UNSIGNED, 
         primaryKey: true, 
         autoIncrement: true 
     },
     candidate_id: { 
-        type: DataTypes.INTEGER.UNSIGNED, 
+        type: DataTypes.BIGINT.UNSIGNED, 
         allowNull: false 
     },
     question_id: { 
-        type: DataTypes.INTEGER.UNSIGNED, 
+        type: DataTypes.BIGINT.UNSIGNED, 
         allowNull: false 
     },
     answer: { 

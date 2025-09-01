@@ -105,14 +105,16 @@ LecturerProfile.belongsToMany(ResearchField, {
   through: LecturerResearchField,
   foreignKey: 'lecturer_profile_id',
   otherKey: 'research_field_id',
-  as: 'ResearchFields'
+  as: 'ResearchFields',
+  uniqueKey: 'lecturer_researchfield_unique'
 });
 
 ResearchField.belongsToMany(LecturerProfile, {
   through: LecturerResearchField,
   foreignKey: 'research_field_id',
   otherKey: 'lecturer_profile_id',
-  as: 'LecturerProfiles'
+  as: 'LecturerProfiles',
+  uniqueKey: 'lecturer_researchfield_unique'
 });
 
 // CourseMapping relationships

@@ -153,38 +153,16 @@ app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
 //   SQL_LOG=true           -> enable raw SQL logging (configured in db.js)
 (async () => {
   try {
-    const ALTER_SYNC = process.env.DB_ALTER_SYNC === 'true';
-    const FORCE_SYNC = process.env.DB_FORCE_SYNC === 'true';
-    const syncOptions = {};
-
-    if (!ALTER_SYNC && process.env.NODE_ENV === 'production') {
-      ALTER_SYNC = true; // In production, default to ALTER to keep schema updated
-      console.log('[startup] DB_ALTER_SYNC not set, defaulting to true in production');
-    }
-    if (FORCE_SYNC) {
-      syncOptions.force = true;
-      console.warn('[startup] FORCE sync enabled (dropping & recreating tables)');
-    } else if (ALTER_SYNC) {
-      syncOptions.alter = true;
-      console.log('[startup] Alter sync enabled');
-    } else {
-      console.log('[startup] Fast mode: skipping sequelize.sync (no alter/force)');
-    }
-
-    if (Object.keys(syncOptions).length) {
-      await sequelize.sync(syncOptions);
-      console.log('[startup] Database synchronized');
-    } else {
-      await sequelize.authenticate();
-      console.log('[startup] Database connection OK');
-    }
+    // Always create or update all tables on server start
+    await sequelize.sync({ alter: true });
+    console.log('[startup] Database synchronized (all tables created/updated)');
 
     await seedInterviewQuestions(); // seeder has its own flag checks
     await seedResearchFields(); // seed research fields if empty
     await seedUniversities(); // seed universities if empty
     await seedMajors(); // seed majors if empty
 
-    app.listen(PORT, () => console.log(`Server listening on ${PORT} (fastMode=${!ALTER_SYNC && !FORCE_SYNC})`));
+    app.listen(PORT, () => console.log(`Server listening on ${PORT}`));
   } catch (e) {
     console.error('Startup failure:', e.message);
     process.exit(1);
