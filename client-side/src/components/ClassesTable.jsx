@@ -3,7 +3,7 @@ import { School } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/Table";
 import Badge from "./ui/Badge";
 import Button from "./ui/Button";
-import { Edit, Trash2, Users } from "lucide-react";
+import { Edit, Trash2 } from "lucide-react";
 
 export default function ClassesTable({ classes, onEdit, onDelete, onAssignCourses, loading, courseCatalog = [], title, description }) {
   const codeToName = React.useMemo(()=> {
@@ -51,6 +51,7 @@ export default function ClassesTable({ classes, onEdit, onDelete, onAssignCourse
             <TableHead className="text-gray-800 text-sm font-semibold tracking-wide">Academic Year</TableHead>
             <TableHead className="text-gray-800 text-sm font-semibold tracking-wide">Total Groups</TableHead>
             <TableHead className="text-gray-800 text-sm font-semibold tracking-wide">Assigned Courses</TableHead>
+            <TableHead className="text-gray-800 text-sm font-semibold tracking-wide">Total Hours and Credits</TableHead>
             <TableHead className="text-gray-800 text-sm font-semibold tracking-wide text-right pr-6">Actions</TableHead>
           </TableRow>
         </TableHeader>
@@ -74,17 +75,28 @@ export default function ClassesTable({ classes, onEdit, onDelete, onAssignCourse
                 </div>
               </TableCell>
               <TableCell>
+                <div className="text-xs text-gray-700">
+                  <div className="flex flex-wrap gap-1.5 items-center">
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] px-2 py-0.5 bg-indigo-50 text-indigo-700 border-indigo-200"
+                      title="Total hours across assigned courses"
+                    >
+                      {Number(classItem.total_hours || 0)} hrs
+                    </Badge>
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] px-2 py-0.5 bg-emerald-50 text-emerald-700 border-emerald-200"
+                      title="Total credits across assigned courses"
+                    >
+                      {Number(classItem.total_credits || 0)} credits
+                    </Badge>
+                  </div>
+                </div>
+              </TableCell>
+              <TableCell>
                 <div className="flex items-center gap-1 justify-end pr-0 sm:pr-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="border-blue-200 hover:bg-blue-600 hover:text-white text-blue-700 bg-blue-50"
-                    onClick={() => onAssignCourses(classItem)}
-                    title="Assign Courses"
-                  >
-                    <Users className="h-4 w-4" />
-                    <span className="hidden xl:inline ml-1 text-xs font-medium">Courses</span>
-                  </Button>
+                  
                   <Button
                     variant="outline"
                     size="sm"

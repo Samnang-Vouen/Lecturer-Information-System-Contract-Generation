@@ -113,11 +113,13 @@ export default function ClassesManagement() {
   // Normalize total_class (string -> int, default 1)
   const parsedTotal = parseInt(payload.total_class, 10);
   payload.total_class = Number.isFinite(parsedTotal) && parsedTotal > 0 ? parsedTotal : 1;
-  axios.post("/classes", { ...payload, courses: [] })
+  // Include any selected courses chosen during add flow
+  axios.post("/classes", { ...payload, courses: selectedCourses })
       .then(res => {
         setClasses(prev => [...prev, res.data]);
         setIsAddDialogOpen(false);
         setNewClass(initialClassState);
+        setSelectedCourses([]);
         setError("");
       })
       .catch(() => setError("Failed to add class."))
@@ -176,20 +178,31 @@ export default function ClassesManagement() {
 
   // Assign courses
   const handleAssignCourses = (classItem) => {
-    setAssigningClass(classItem);
-    setSelectedCourses(Array.isArray(classItem.courses) ? classItem.courses : []);
+    // If classItem has no id, treat as new-class assignment
+    const isNew = !classItem || !classItem.id;
+    const target = isNew
+      ? { id: null, name: newClass?.name || 'New Class', courses: Array.isArray(selectedCourses) ? selectedCourses : [] }
+      : classItem;
+    setAssigningClass(target);
+    setSelectedCourses(Array.isArray(target.courses) ? target.courses : []);
     axios.get('/courses')
       .then(res => {
         const payload = res.data;
         const list = Array.isArray(payload) ? payload : (Array.isArray(payload.data) ? payload.data : []);
         setAvailableCourses(list);
       })
-  .catch((err)=>{ console.debug('Failed to load courses list', err); })
+      .catch((err)=>{ console.debug('Failed to load courses list', err); })
       .finally(()=> setIsCourseAssignDialogOpen(true));
   };
 
   // Save course assignment
   const handleSaveCourseAssignment = () => {
+    // If assigningClass has no id, we're in Add flow: just store selectedCourses and close dialog
+    if (!assigningClass || !assigningClass.id) {
+      setIsCourseAssignDialogOpen(false);
+      setAssigningClass(null);
+      return;
+    }
     setLoading(true);
     axios.put(`/classes/${assigningClass.id}/courses`, { courses: selectedCourses })
       .then(() => {
@@ -292,7 +305,7 @@ export default function ClassesManagement() {
         )}
         <div ref={sentinelRef} className="h-10 flex items-center justify-center text-xs text-gray-500">
           {loading && hasMore && <span>Loading more...</span>}
-          {!hasMore && !loading && <span className="text-gray-400">No more classes</span>}
+          {/* {!hasMore && !loading && <span className="text-gray-400">No more classes</span>} */}
         </div>
         <ClassFormDialog
           open={isAddDialogOpen}
@@ -301,8 +314,11 @@ export default function ClassesManagement() {
           classData={newClass}
           setClassData={setNewClass}
           isEdit={false}
+          onAssignCourses={() => handleAssignCourses(null)}
+          selectedCourses={selectedCourses}
+          courseCatalog={availableCourses}
         />
-        <ClassFormDialog
+  <ClassFormDialog
           open={isEditDialogOpen}
           onOpenChange={setIsEditDialogOpen}
           onSubmit={handleUpdateClass}

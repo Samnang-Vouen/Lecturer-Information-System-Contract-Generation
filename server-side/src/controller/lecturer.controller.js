@@ -1,4 +1,6 @@
 import { Op, Sequelize } from 'sequelize';
+import fs from 'fs';
+import path from 'path';
 import { LecturerProfile, User, Department } from '../model/index.js';
 import Candidate from '../model/candidate.model.js';
 import LecturerCourse from '../model/lecturerCourse.model.js';
@@ -495,5 +497,47 @@ export const updateLecturerProfile = async (req, res) => {
   } catch (e) {
     console.error('[updateLecturerProfile] error', e);
     return res.status(500).json({ message: 'Failed to update lecturer profile', error: e.message });
+  }
+};
+
+/**
+ * POST /api/lecturers/:id/payroll (admin only)
+ * Uploads/replaces a lecturer's payroll file. Expects multipart/form-data with field name 'payroll'.
+ * :id refers to the User.id associated with the LecturerProfile.
+ */
+export const uploadLecturerPayroll = async (req, res) => {
+  try {
+    const userId = parseInt(req.params.id, 10);
+    if (!userId) return res.status(400).json({ message: 'Invalid id' });
+
+    // Ensure file present
+    const file = req.file;
+    if (!file) return res.status(400).json({ message: 'Missing payroll file' });
+
+    // Find lecturer profile and include user to help compute slug if needed
+    const profile = await LecturerProfile.findOne({ where: { user_id: userId }, include: [{ model: User, attributes: ['email', 'display_name'] }] });
+    if (!profile) return res.status(404).json({ message: 'Lecturer not found' });
+
+    // Compute storage folder
+    const baseName = profile.full_name_english || profile.User?.display_name || (profile.User?.email ? profile.User.email.split('@')[0] : `lecturer_${userId}`);
+    const folderSlug = (profile.storage_folder || baseName)
+      .toString()
+      .replace(/[^a-zA-Z0-9\-_ ]/g, '')
+      .replace(/\s+/g, '_')
+      .substring(0, 80) || `lecturer_${userId}`;
+    const destRoot = path.join(process.cwd(), 'uploads', 'lecturers', folderSlug);
+    await fs.promises.mkdir(destRoot, { recursive: true });
+
+    const ext = file.originalname ? path.extname(file.originalname) : '.pdf';
+    const target = path.join(destRoot, `payroll${ext || ''}`);
+    await fs.promises.writeFile(target, file.buffer);
+    const rel = target.replace(process.cwd() + path.sep, '').replace(/\\/g, '/');
+
+    await profile.update({ pay_roll_in_riel: rel, storage_folder: folderSlug });
+
+    return res.json({ message: 'Payroll uploaded', path: rel, payrollFilePath: rel, profile: { id: profile.id, pay_roll_in_riel: rel } });
+  } catch (e) {
+    console.error('[uploadLecturerPayroll] error', e);
+    return res.status(500).json({ message: 'Failed to upload payroll', error: e.message });
   }
 };

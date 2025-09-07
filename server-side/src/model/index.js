@@ -18,6 +18,8 @@ import Candidate from './candidate.model.js';
 import { InterviewQuestion } from './interviewQuestion.model.js';
 import { CandidateQuestion } from './candidateQuestion.model.js';
 import University from './university.model.js';
+import TeachingContract from './teachingContract.model.js';
+import TeachingContractCourse from './teachingContractCourse.model.js';
 
 // Set up associations
 
@@ -60,7 +62,6 @@ LecturerProfile.belongsToMany(Department, {
   foreignKey: 'profile_id',
   otherKey: 'dept_id'
 });
-
 // Course - Department relationships
 Course.belongsTo(Department, { 
   foreignKey: 'dept_id', 
@@ -183,6 +184,21 @@ User.hasMany(DigitalSignature, {
   foreignKey: 'user_id' 
 });
 
+// Teaching contract relationships
+TeachingContract.belongsTo(User, { foreignKey: 'lecturer_user_id', as: 'lecturer', onDelete: 'CASCADE', onUpdate: 'CASCADE' });
+TeachingContract.belongsTo(User, { foreignKey: 'created_by', as: 'creator', onDelete: 'RESTRICT', onUpdate: 'CASCADE' });
+User.hasMany(TeachingContract, { foreignKey: 'lecturer_user_id', as: 'lecturerContracts' });
+User.hasMany(TeachingContract, { foreignKey: 'created_by', as: 'createdContracts' });
+
+TeachingContractCourse.belongsTo(TeachingContract, { foreignKey: 'contract_id', onDelete: 'CASCADE', onUpdate: 'CASCADE' });
+TeachingContract.hasMany(TeachingContractCourse, { foreignKey: 'contract_id', as: 'courses' });
+
+TeachingContractCourse.belongsTo(Course, { foreignKey: 'course_id', onDelete: 'SET NULL', onUpdate: 'CASCADE' });
+Course.hasMany(TeachingContractCourse, { foreignKey: 'course_id' });
+
+TeachingContractCourse.belongsTo(ClassModel, { foreignKey: 'class_id', onDelete: 'SET NULL', onUpdate: 'CASCADE' });
+ClassModel.hasMany(TeachingContractCourse, { foreignKey: 'class_id' });
+
 // Candidate - CandidateQuestion - InterviewQuestion relationships
 Candidate.hasMany(CandidateQuestion, {
   foreignKey: 'candidate_id',
@@ -232,7 +248,9 @@ export {
   Candidate,
   InterviewQuestion,
   CandidateQuestion,
-  University
+  University,
+  TeachingContract,
+  TeachingContractCourse
 };
 
 // Default export (User for backward compatibility)

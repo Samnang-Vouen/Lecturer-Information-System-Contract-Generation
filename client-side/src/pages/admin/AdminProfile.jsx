@@ -149,7 +149,7 @@ export default function AdminProfile() {
                     aria-label={showPw.current ? 'Hide current password' : 'Show current password'}
                     tabIndex={0}
                   >
-                    {showPw.current ? <EyeOff className='w-5 h-5' /> : <Eye className='w-5 h-5' />}
+                    {showPw.current ? <Eye className='w-5 h-5' /> : <EyeOff className='w-5 h-5' />}
                   </button>
                 </div>
               </div>
@@ -170,7 +170,7 @@ export default function AdminProfile() {
                     className='absolute inset-y-0 right-0 px-2 flex items-center text-gray-500 hover:text-gray-700'
                     aria-label={showPw.new ? 'Hide new password' : 'Show new password'}
                   >
-                    {showPw.new ? <EyeOff className='w-5 h-5' /> : <Eye className='w-5 h-5' />}
+                    {showPw.new ? <Eye className='w-5 h-5' /> : <EyeOff className='w-5 h-5' />}
                   </button>
                 </div>
               </div>
@@ -191,7 +191,7 @@ export default function AdminProfile() {
                     className='absolute inset-y-0 right-0 px-2 flex items-center text-gray-500 hover:text-gray-700'
                     aria-label={showPw.confirm ? 'Hide confirm password' : 'Show confirm password'}
                   >
-                    {showPw.confirm ? <EyeOff className='w-5 h-5' /> : <Eye className='w-5 h-5' />}
+                    {showPw.confirm ? <Eye className='w-5 h-5' /> : <EyeOff className='w-5 h-5' />}
                   </button>
                 </div>
               </div>

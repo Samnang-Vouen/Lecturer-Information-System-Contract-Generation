@@ -74,6 +74,12 @@ const navItems = [
     roles: ["admin"],
   },
   {
+    title: "Contract Generation",
+    href: "/admin/contracts",
+    icon: FileText,
+    roles: ["admin"],
+  },
+  {
     title: "User Management",
     href: "/superadmin/users",
     icon: Users,
@@ -90,6 +96,19 @@ const navItems = [
   href: "/lecturer/my-contracts",
     icon: FileText,
     roles: ["lecturer"],
+  },
+  // Management minimal menu
+  {
+    title: "My Profile",
+    href: "/management/profile",
+    icon: UserCheck,
+    roles: ["management"],
+  },
+  {
+    title: "Contract Management",
+    href: "/management/contracts",
+    icon: FileText,
+    roles: ["management"],
   },
 ];
 

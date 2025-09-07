@@ -26,7 +26,7 @@ export const login = async (req, res) => {
     // Bootstrap superadmin if not present
     if (!user && email === 'superadmin@cadt.edu.kh') {
       if (password !== '12345678') {
-        return res.status(401).json({ success:false, message:'Invalid credentials' });
+        return res.status(401).json({ success:false, message:'Invalid email or password. Please try again.' });
       }
       const hashed = await bcrypt.hash(password, 10);
       user = await User.create({ email, password_hash: hashed, display_name: 'Super Admin', status: 'active' });
@@ -34,7 +34,7 @@ export const login = async (req, res) => {
     }
 
     if (!user) {
-      return res.status(401).json({ success:false, message:'Invalid credentials' });
+      return res.status(401).json({ success:false, message:'Invalid email or password. Please try again.' });
     }
   // NOTE: Status gating moved after password + role determination to allow first-login activation for lecturers
 
@@ -64,7 +64,7 @@ export const login = async (req, res) => {
       if (process.env.NODE_ENV !== 'production') {
         console.warn('[AUTH] Invalid credentials for', email, 'storedPrefix', stored.slice(0,7));
       }
-      return res.status(401).json({ success:false, message:'Invalid credentials' });
+      return res.status(401).json({ success:false, message:'Invalid email or password. Please try again.' });
     }
 
     // Determine primary role: query roles via junction

@@ -19,6 +19,7 @@ import courseMappingRoutes from './route/courseMapping.route.js';
 import researchFieldRoutes from './route/researchField.route.js';
 import universityRoutes from './route/university.route.js';
 import majorRoutes from './route/major.route.js';
+import teachingContractRoutes from './route/teachingContract.route.js';
 import { seedInterviewQuestions } from './utils/seedInterviewQuestions.js';
 import { seedResearchFields } from './utils/seedResearchFields.js';
 import { seedUniversities } from './utils/seedUniversities.js';
@@ -58,6 +59,7 @@ app.use('/api/course-mappings', courseMappingRoutes);
 app.use('/api/research-fields', researchFieldRoutes);
 app.use('/api/universities', universityRoutes);
 app.use('/api/majors', majorRoutes);
+app.use('/api/teaching-contracts', teachingContractRoutes);
 // Serve uploaded lecturer files (CVs, syllabi)
 app.use('/uploads', express.static('uploads'));
 // Swagger/OpenAPI docs
@@ -70,91 +72,10 @@ app.use('/api/doc', swaggerUi.serve, swaggerUi.setup(openapiDoc));
 // to quickly verify the API process is running (does not perform deep dependency checks).
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
 
-/* async function ensureUserColumns() {
-  const columns = [
-    { name: 'status', ddl: "ALTER TABLE `Users` ADD COLUMN `status` ENUM('active','inactive') NOT NULL DEFAULT 'active' AFTER `password`" },
-    { name: 'display_name', ddl: "ALTER TABLE `Users` ADD COLUMN `display_name` VARCHAR(255) NULL AFTER `email`" },
-    { name: 'department_name', ddl: "ALTER TABLE `Users` ADD COLUMN `department_name` VARCHAR(255) NULL AFTER `display_name`" },
-    { name: 'last_login', ddl: "ALTER TABLE `Users` ADD COLUMN `last_login` DATETIME NULL AFTER `department_name`" }
-  ];
-  try {
-    for (const col of columns) {
-      const [rows] = await sequelize.query(`SHOW COLUMNS FROM \`Users\` LIKE '${col.name}'`);
-      if (rows.length === 0) {
-        console.log(`Adding missing column: ${col.name}`);
-        await sequelize.query(col.ddl);
-      }
-    }
-  } catch (e) {
-    console.error('Column ensure failed:', e.message);
-  }
-}
- */
-
-// Ensure Classes.dept_id allows NULL (legacy schema may have NOT NULL constraint)
-/* async function ensureClassDeptNullable() {
-  try {
-    const [rows] = await sequelize.query("SHOW COLUMNS FROM `Classes` LIKE 'dept_id'");
-    if (rows.length && rows[0].Null === 'NO') {
-      console.log('Altering Classes.dept_id to allow NULL');
-      await sequelize.query('ALTER TABLE `Classes` MODIFY `dept_id` INT NULL');
-    }
-  } catch (e) {
-    console.error('Class dept_id alter failed:', e.message);
-  }
-}
- */
-// Prevent runaway duplicate indexes (root cause of: Too many keys specified; max 64 keys allowed)
-/* async function ensureUniqueIndexes() {
-  try {
-    const [indexes] = await sequelize.query('SHOW INDEX FROM `Users`');
-    const emailIndexes = indexes.filter(i => i.Column_name === 'email' && i.Non_unique === 0);
-    // Keep only first (oldest) unique email index
-    if (emailIndexes.length > 1) {
-      // Sort by Key_name to deterministically keep one
-      const toDrop = emailIndexes.slice(1); // drop all but first
-      for (const idx of toDrop) {
-        try {
-          console.log('Dropping duplicate unique index on Users.email:', idx.Key_name);
-          await sequelize.query(`ALTER TABLE \`Users\` DROP INDEX \`${idx.Key_name}\``);
-        } catch (e) {
-          console.warn('Drop index failed', idx.Key_name, e.message);
-        }
-      }
-    }
-    // If no unique email index exists, create one
-    if (emailIndexes.length === 0) {
-      console.log('Creating unique index uniq_users_email');
-      await sequelize.query('ALTER TABLE `Users` ADD UNIQUE INDEX `uniq_users_email` (`email`)');
-    }
-  } catch (e) {
-    console.error('ensureUniqueIndexes failed:', e.message);
-  }
-}
- */
-
-// Ensure candidates.dept_id exists for department scoping of recruitment
-/* async function ensureCandidateDeptIdColumn() {
-  try {
-    const [rows] = await sequelize.query("SHOW COLUMNS FROM `candidates` LIKE 'dept_id'");
-    if (!rows.length) {
-      console.log('Adding missing column candidates.dept_id');
-      await sequelize.query('ALTER TABLE `candidates` ADD COLUMN `dept_id` INT NULL AFTER `evaluator`');
-    }
-  } catch (e) {
-    console.error('ensureCandidateDeptIdColumn failed:', e.message);
-  }
-} */
-
-// Optimized startup: avoid slow ALTER each run. Use environment flags to opt-in when needed.
-//   DB_ALTER_SYNC=true     -> run sequelize.sync({ alter: true }) (non-destructive; can be slow)
-//   DB_FORCE_SYNC=true     -> run sequelize.sync({ force: true }) (DESTRUCTIVE: drops tables)
-//   SEED_INTERVIEW_QUESTIONS=true -> seed interview questions if empty (or SEED_FORCE=true to replace)
-//   SQL_LOG=true           -> enable raw SQL logging (configured in db.js)
 (async () => {
   try {
     // Use alter:true only if DB_ALTER_SYNC is set, otherwise use safe sync
-    const alterSync = process.env.DB_ALTER_SYNC === 'true';
+    const alterSync = process.env.DB_ALTER_SYNC === 'false';
     if (alterSync) {
       await sequelize.sync({ alter: true });
       console.log('[startup] Database synchronized (alter mode)');
@@ -163,10 +84,64 @@ app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
       console.log('[startup] Database synchronized (safe mode)');
     }
 
+    // Ensure new columns exist on legacy Teaching_Contracts table
+    async function ensureTeachingContractColumns() {
+      try {
+        const table = 'Teaching_Contracts';
+        const addIfMissing = async (col, ddl) => {
+          const [rows] = await sequelize.query(`SHOW COLUMNS FROM \`${table}\` LIKE '${col}'`);
+          if (!rows.length) {
+            console.log(`[schema] Adding missing column ${table}.${col}`);
+            await sequelize.query(ddl);
+          }
+        };
+        // Period columns used by UI Period display
+        await addIfMissing('start_date', "ALTER TABLE `Teaching_Contracts` ADD COLUMN `start_date` DATE NULL AFTER `year_level`");
+        await addIfMissing('end_date', "ALTER TABLE `Teaching_Contracts` ADD COLUMN `end_date` DATE NULL AFTER `start_date`");
+        await addIfMissing('lecturer_signature_path', "ALTER TABLE `Teaching_Contracts` ADD COLUMN `lecturer_signature_path` VARCHAR(512) NULL AFTER `status`");
+        await addIfMissing('management_signature_path', "ALTER TABLE `Teaching_Contracts` ADD COLUMN `management_signature_path` VARCHAR(512) NULL AFTER `lecturer_signature_path`");
+        await addIfMissing('lecturer_signed_at', "ALTER TABLE `Teaching_Contracts` ADD COLUMN `lecturer_signed_at` DATETIME NULL AFTER `management_signature_path`");
+        await addIfMissing('management_signed_at', "ALTER TABLE `Teaching_Contracts` ADD COLUMN `management_signed_at` DATETIME NULL AFTER `lecturer_signed_at`");
+        await addIfMissing('pdf_path', "ALTER TABLE `Teaching_Contracts` ADD COLUMN `pdf_path` VARCHAR(512) NULL AFTER `management_signed_at`");
+      } catch (e) {
+        console.error('[schema] ensureTeachingContractColumns failed:', e.message);
+      }
+    }
+    await ensureTeachingContractColumns();
+
     await seedInterviewQuestions(); // seeder has its own flag checks
     await seedResearchFields(); // seed research fields if empty
     await seedUniversities(); // seed universities if empty
     await seedMajors(); // seed majors if empty
+
+    // Ensure lecturer_profiles has title & gender columns (non-destructive add-if-missing)
+    try {
+      const table = 'lecturer_profiles';
+      const addIfMissing = async (col, ddl) => {
+        const [rows] = await sequelize.query(`SHOW COLUMNS FROM \`${table}\` LIKE '${col}'`);
+        if (!rows.length) {
+          console.log(`[schema] Adding missing column ${table}.${col}`);
+          await sequelize.query(ddl);
+        }
+      };
+      await addIfMissing('title', "ALTER TABLE `lecturer_profiles` ADD COLUMN `title` ENUM('Mr','Ms','Mrs','Dr','Prof') NULL AFTER `employee_id`");
+      await addIfMissing('gender', "ALTER TABLE `lecturer_profiles` ADD COLUMN `gender` ENUM('male','female','other') NULL AFTER `title`");
+    } catch (e) {
+      console.warn('[schema] ensure lecturer_profiles title/gender failed:', e.message);
+    }
+
+    // Ensure Candidates.status enum includes 'done' (attempt auto-alter for MySQL)
+    try {
+      const [rows] = await sequelize.query("SHOW COLUMNS FROM `Candidates` LIKE 'status'");
+      const type = rows?.[0]?.Type || '';
+      if (type && !/done/.test(type)) {
+        console.log('[schema] Candidates.status missing value done; attempting to alter enum');
+        await sequelize.query("ALTER TABLE `Candidates` MODIFY COLUMN `status` ENUM('pending','interview','discussion','accepted','rejected','done') NOT NULL DEFAULT 'pending'");
+        console.log('[schema] Candidates.status enum altered to include done');
+      }
+    } catch (e) {
+      console.warn('[schema] check Candidates.status failed:', e.message);
+    }
 
     app.listen(PORT, () => console.log(`Server listening on ${PORT}`));
   } catch (e) {

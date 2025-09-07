@@ -8,7 +8,8 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "./ui/
 
 export default function LoginForm() {
     // Central email regex (case-insensitive) – keep simple to avoid HTML pattern quirks
-    const EMAIL_REGEX = /^[A-Za-z0-9._%+-]+@cadt\.edu\.kh$/i;
+    // Hyphen must be escaped or placed first/last inside [] when used for HTML pattern
+    const EMAIL_REGEX = /^[A-Za-z0-9._%+\-]+@cadt\.edu\.kh$/i;
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
@@ -116,7 +117,7 @@ export default function LoginForm() {
                                     aria-label={showPassword ? 'Hide password' : 'Show password'}
                                     title={showPassword ? 'Hide password' : 'Show password'}
                                 >
-                                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                    {showPassword ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
                                 </button>
                         </div>
                 </div>

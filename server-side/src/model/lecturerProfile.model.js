@@ -20,6 +20,15 @@ const LecturerProfile = sequelize.define('LecturerProfile', {
     type: DataTypes.STRING(255),
     allowNull: false
   },
+  // New fields for title and gender
+  title: {
+    type: DataTypes.ENUM('Mr', 'Ms', 'Mrs', 'Dr', 'Prof'),
+    allowNull: true
+  },
+  gender: {
+    type: DataTypes.ENUM('male', 'female', 'other'),
+    allowNull: true
+  },
   full_name_english: {
     type: DataTypes.STRING(255),
     allowNull: true

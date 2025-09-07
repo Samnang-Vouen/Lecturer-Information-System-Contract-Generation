@@ -29,7 +29,7 @@ const Candidate = sequelize.define('Candidate', {
         allowNull: true,
     },
     status: {
-        type: DataTypes.ENUM('pending', 'interview', 'discussion', 'accepted', 'rejected'),
+        type: DataTypes.ENUM('pending', 'interview', 'discussion', 'accepted', 'rejected', 'done'),
         allowNull: false,
         defaultValue: 'pending',
     },
