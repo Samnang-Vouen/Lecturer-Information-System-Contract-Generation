@@ -1,32 +1,48 @@
-import React, { useEffect, useState } from 'react';
-import { useAuthStore } from '../../store/useAuthStore.js';
-import { axiosInstance } from '../../lib/axios.js';
-import { UserCircle, Clock, KeyRound, Eye, EyeOff } from 'lucide-react';
-import Button from '../../components/ui/Button.jsx';
-import Input from '../../components/ui/Input.jsx';
-import toast from 'react-hot-toast';
+import React, { useEffect, useState } from "react";
+import { useAuthStore } from "../../store/useAuthStore.js";
+import { axiosInstance } from "../../lib/axios.js";
+import {
+  UserCircle,
+  Clock,
+  KeyRound,
+  Eye,
+  EyeOff,
+  Shield,
+  Calendar,
+  Mail,
+  Building,
+} from "lucide-react";
+import Button from "../../components/ui/Button.jsx";
+import Input from "../../components/ui/Input.jsx";
+import toast from "react-hot-toast";
 
 function formatDateTime(dt) {
-  if (!dt) return '—';
+  if (!dt) return "—";
   const date = new Date(dt);
   return date.toLocaleString(undefined, {
-    weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
-    hour: '2-digit', minute: '2-digit', hour12: true
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
   });
 }
 
 function durationFrom(start) {
-  if (!start) return '';
+  if (!start) return "";
   const s = new Date(start).getTime();
   const now = Date.now();
-  let diff = Math.floor((now - s) / 1000); // sec
-  const days = Math.floor(diff / 86400); diff -= days * 86400;
+  let diff = Math.floor((now - s) / 1000);
+  const days = Math.floor(diff / 86400);
+  diff -= days * 86400;
   const years = Math.floor(days / 365);
   const remDays = days - years * 365;
   const parts = [];
-  if (years) parts.push(`${years} year${years>1?'s':''}`);
-  if (remDays) parts.push(`${remDays} day${remDays>1?'s':''}`);
-  return `(${parts.join(' ') || 'now'})`;
+  if (years) parts.push(`${years} year${years > 1 ? "s" : ""}`);
+  if (remDays) parts.push(`${remDays} day${remDays > 1 ? "s" : ""}`);
+  return `(${parts.join(" ") || "now"})`;
 }
 
 export default function AdminProfile() {
@@ -35,172 +51,265 @@ export default function AdminProfile() {
   const [activity, setActivity] = useState(null);
   const [loading, setLoading] = useState(true);
   const [pwLoading, setPwLoading] = useState(false);
-  const [form, setForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
-  const [showPw, setShowPw] = useState({ current: false, new: false, confirm: false });
+  const [form, setForm] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+  });
+  const [showPw, setShowPw] = useState({
+    current: false,
+    new: false,
+    confirm: false,
+  });
 
   useEffect(() => {
     const load = async () => {
       try {
         setLoading(true);
         const [p, a] = await Promise.all([
-          axiosInstance.get('/profile/me'),
-          axiosInstance.get('/profile/activity')
+          axiosInstance.get("/profile/me"),
+          axiosInstance.get("/profile/activity"),
         ]);
         setProfile(p.data);
         setActivity(a.data);
       } catch (e) {
-        console.error('Profile load failed', e);
-        toast.error(e.response?.data?.message || 'Failed to load profile');
-      } finally { setLoading(false); }
+        console.error("Profile load failed", e);
+        toast.error(e.response?.data?.message || "Failed to load profile");
+      } finally {
+        setLoading(false);
+      }
     };
     load();
   }, []);
 
-  const onChange = e => setForm(f => ({ ...f, [e.target.name]: e.target.value }));
+  const onChange = (e) =>
+    setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
 
   const submitPassword = async (e) => {
     e.preventDefault();
-    if (!form.currentPassword || !form.newPassword) return toast.error('Fill all fields');
-    if (form.newPassword !== form.confirmPassword) return toast.error('Passwords do not match');
+    if (!form.currentPassword || !form.newPassword)
+      return toast.error("Fill all fields");
+    if (form.newPassword !== form.confirmPassword)
+      return toast.error("Passwords do not match");
     try {
       setPwLoading(true);
-      await axiosInstance.post('/profile/change-password', { currentPassword: form.currentPassword, newPassword: form.newPassword });
-      toast.success('Password updated');
-      setForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      await axiosInstance.post("/profile/change-password", {
+        currentPassword: form.currentPassword,
+        newPassword: form.newPassword,
+      });
+      toast.success("Password updated");
+      setForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
     } catch (e) {
-      toast.error(e.response?.data?.message || 'Update failed');
-    } finally { setPwLoading(false); }
+      toast.error(e.response?.data?.message || "Update failed");
+    } finally {
+      setPwLoading(false);
+    }
   };
 
   if (loading) {
-    return <div className='p-8'>Loading...</div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="flex items-center space-x-3">
+          <div className="animate-spin rounded-full h-8 w-8 border-2 border-indigo-600 border-t-transparent"></div>
+          <span className="text-slate-600 font-medium">Loading profile...</span>
+        </div>
+      </div>
+    );
   }
 
   return (
-      <div className='p-8 space-y-8'>
-        <h1 className='text-3xl font-bold text-gray-800'>My Profile</h1>
-
-        <div className='grid grid-cols-1 lg:grid-cols-3 gap-6'>
-          {/* Profile Card */}
-          <div className='bg-white p-6 rounded-lg shadow-sm border border-gray-200 col-span-1'>
-            <div className='flex items-center mb-4'>
-              <UserCircle className='w-10 h-10 text-blue-600 mr-3' />
-              <div>
-                <p className='text-sm text-gray-500'>Full Name</p>
-                <p className='text-lg font-semibold text-gray-900'>{profile?.fullName || '—'}</p>
+    <div className="min-h-screen bg-slate-50 py-8">
+      {/* Header Section */}
+      <div className="max-w-7xl mx-auto px-6 mb-8">
+        <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+          <div className="bg-gradient-to-r from-indigo-600 via-blue-600 to-blue-600 px-8 py-12">
+            <div className="flex items-center space-x-6">
+              <div className="w-24 h-24 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center">
+                <UserCircle className="w-12 h-12 text-white" />
               </div>
-            </div>
-            <div className='mt-4'>
-              <p className='text-sm text-gray-500'>Email</p>
-              <p className='font-medium'>{profile?.email}</p>
-            </div>
-            <div className='mt-4'>
-              <p className='text-sm text-gray-500'>Role</p>
-              <p className='font-medium capitalize'>{profile?.role}</p>
-            </div>
-            {profile?.department && (
-              <div className='mt-4'>
-                <p className='text-sm text-gray-500'>Department</p>
-                <p className='font-medium'>{profile.department}</p>
-              </div>
-            )}
-          </div>
-
-          {/* Activity Card */}
-          <div className='bg-white p-6 rounded-lg shadow-sm border border-gray-200 col-span-1'>
-            <div className='flex items-center mb-4'>
-              <Clock className='w-6 h-6 text-blue-600 mr-2' />
-              <h2 className='text-lg font-semibold text-gray-800'>Login Activity</h2>
-            </div>
-            <div className='space-y-4'>
-              <div>
-                <p className='text-sm text-gray-500'>First access to site</p>
-                <p className='font-semibold'>{formatDateTime(activity?.firstAccess)} <span className='font-normal text-gray-500'>{durationFrom(activity?.firstAccess)}</span></p>
-              </div>
-              <div>
-                <p className='text-sm text-gray-500'>Last access to site</p>
-                <p className='font-semibold'>{formatDateTime(activity?.lastAccess)} <span className='font-normal text-gray-500'>{activity?.lastAccess ? '(now)' : ''}</span></p>
-              </div>
-            </div>
-          </div>
-
-          {/* Password Change */}
-          <div className='bg-white p-6 rounded-lg shadow-sm border border-gray-200 col-span-1'>
-            <div className='flex items-center mb-4'>
-              <KeyRound className='w-6 h-6 text-blue-600 mr-2' />
-              <h2 className='text-lg font-semibold text-gray-800'>Change Password</h2>
-            </div>
-            <form onSubmit={submitPassword} className='space-y-4'>
-              <div>
-                <label className='block text-sm font-medium text-gray-700 mb-1'>Current Password</label>
-                <div className='relative'>
-                  <Input
-                    name='currentPassword'
-                    type={showPw.current ? 'text' : 'password'}
-                    value={form.currentPassword}
-                    onChange={onChange}
-                    placeholder='••••••••'
-                    className='pr-10'
-                  />
-                  <button
-                    type='button'
-                    onClick={() => setShowPw(s => ({ ...s, current: !s.current }))}
-                    className='absolute inset-y-0 right-0 px-2 flex items-center text-gray-500 hover:text-gray-700'
-                    aria-label={showPw.current ? 'Hide current password' : 'Show current password'}
-                    tabIndex={0}
-                  >
-                    {showPw.current ? <Eye className='w-5 h-5' /> : <EyeOff className='w-5 h-5' />}
-                  </button>
+              <div className="text-white">
+                <h1 className="text-4xl font-bold mb-2">{profile?.fullName || "Administrator"}</h1>
+                <p className="text-white/80 text-lg">{profile?.email}</p>
+                <div className="flex items-center space-x-4 mt-3">
+                  <span className="inline-flex items-center px-3 py-1 rounded-full bg-white/20 backdrop-blur-sm text-sm font-medium">
+                    <Shield className="w-4 h-4 mr-2" />
+                    {profile?.role}
+                  </span>
+                  {profile?.department && (
+                    <span className="inline-flex items-center px-3 py-1 rounded-full bg-white/20 backdrop-blur-sm text-sm font-medium">
+                      <Building className="w-4 h-4 mr-2" />
+                      {profile.department}
+                    </span>
+                  )}
                 </div>
               </div>
-              <div>
-                <label className='block text-sm font-medium text-gray-700 mb-1'>New Password</label>
-                <div className='relative'>
-                  <Input
-                    name='newPassword'
-                    type={showPw.new ? 'text' : 'password'}
-                    value={form.newPassword}
-                    onChange={onChange}
-                    placeholder='At least 6 characters'
-                    className='pr-10'
-                  />
-                  <button
-                    type='button'
-                    onClick={() => setShowPw(s => ({ ...s, new: !s.new }))}
-                    className='absolute inset-y-0 right-0 px-2 flex items-center text-gray-500 hover:text-gray-700'
-                    aria-label={showPw.new ? 'Hide new password' : 'Show new password'}
-                  >
-                    {showPw.new ? <Eye className='w-5 h-5' /> : <EyeOff className='w-5 h-5' />}
-                  </button>
-                </div>
-              </div>
-              <div>
-                <label className='block text-sm font-medium text-gray-700 mb-1'>Confirm New Password</label>
-                <div className='relative'>
-                  <Input
-                    name='confirmPassword'
-                    type={showPw.confirm ? 'text' : 'password'}
-                    value={form.confirmPassword}
-                    onChange={onChange}
-                    placeholder='Repeat new password'
-                    className='pr-10'
-                  />
-                  <button
-                    type='button'
-                    onClick={() => setShowPw(s => ({ ...s, confirm: !s.confirm }))}
-                    className='absolute inset-y-0 right-0 px-2 flex items-center text-gray-500 hover:text-gray-700'
-                    aria-label={showPw.confirm ? 'Hide confirm password' : 'Show confirm password'}
-                  >
-                    {showPw.confirm ? <Eye className='w-5 h-5' /> : <EyeOff className='w-5 h-5' />}
-                  </button>
-                </div>
-              </div>
-              <Button disabled={pwLoading} type='submit' variant='primary' className='w-full'>
-                {pwLoading ? 'Updating...' : 'Update Password'}
-              </Button>
-            </form>
+            </div>
           </div>
         </div>
+      </div>
+
+      {/* Content Section */}
+      <div className="max-w-7xl mx-auto px-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Profile Details Card */}
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100">
+              <h2 className="text-xl font-semibold text-slate-900 flex items-center">
+                <UserCircle className="w-5 h-5 mr-2 text-indigo-600" />
+                Profile Information
+              </h2>
+            </div>
+            <div className="p-6 space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div className="flex items-start space-x-3">
+                  <div className="w-10 h-10 bg-indigo-50 rounded-lg flex items-center justify-center mt-1">
+                    <UserCircle className="w-5 h-5 text-indigo-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-500 mb-1">Full Name</p>
+                    <p className="text-slate-900 font-semibold truncate">{profile?.fullName || "—"}</p>
+                  </div>
+                </div>
+                
+                <div className="flex items-start space-x-3">
+                  <div className="w-10 h-10 bg-emerald-50 rounded-lg flex items-center justify-center mt-1">
+                    <Mail className="w-5 h-5 text-orange-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-500 mb-1">Email Address</p>
+                    <p className="text-slate-900 font-semibold truncate">{profile?.email}</p>
+                  </div>
+                </div>
+                
+                <div className="flex items-start space-x-3">
+                  <div className="w-10 h-10 bg-purple-50 rounded-lg flex items-center justify-center mt-1">
+                    <Shield className="w-5 h-5 text-purple-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-500 mb-1">Role</p>
+                    <p className="text-slate-900 font-semibold capitalize">{profile?.role}</p>
+                  </div>
+                </div>
+                
+                {profile?.department && (
+                  <div className="flex items-start space-x-3">
+                    <div className="w-10 h-10 bg-orange-50 rounded-lg flex items-center justify-center mt-1">
+                      <Building className="w-5 h-5 text-orange-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-500 mb-1">Department</p>
+                      <p className="text-slate-900 font-semibold">{profile.department}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Activity Timeline */}
+              <div className="pt-6 border-t border-slate-100">
+                <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center">
+                  <Clock className="w-5 h-5 mr-2 text-indigo-600" />
+                  Account Activity
+                </h3>
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-4 p-4 bg-slate-50 rounded-xl">
+                    <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center">
+                      <Calendar className="w-5 h-5 text-orange-600" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-slate-900">First Access</p>
+                      <p className="text-sm text-slate-600">
+                        {formatDateTime(activity?.firstAccess)}{" "}
+                        <span className="text-slate-400">{durationFrom(activity?.firstAccess)}</span>
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center space-x-4 p-4 bg-slate-50 rounded-xl">
+                    <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                      <Clock className="w-5 h-5 text-blue-600" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-slate-900">Last Access</p>
+                      <p className="text-sm text-slate-600">
+                        {formatDateTime(activity?.lastAccess)}{" "}
+                        <span className="text-slate-400">{activity?.lastAccess ? "(current session)" : ""}</span>
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Password Change Card */}
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100">
+              <h2 className="text-xl font-semibold text-slate-900 flex items-center">
+                <KeyRound className="w-5 h-5 mr-2 text-red-600" />
+                Security Settings
+              </h2>
+              <p className="text-sm text-slate-600 mt-1">Update your password to keep your account secure</p>
+            </div>
+            <div className="p-6">
+              <form onSubmit={submitPassword} className="space-y-5">
+                {[
+                  { field: "currentPassword", label: "Current Password", key: "current" },
+                  { field: "newPassword", label: "New Password", key: "new", placeholder: "At least 6 characters" },
+                  { field: "confirmPassword", label: "Confirm New Password", key: "confirm" }
+                ].map(({ field, label, key, placeholder }) => (
+                  <div key={field}>
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">
+                      {label}
+                    </label>
+                    <div className="relative">
+                      <Input
+                        name={field}
+                        type={showPw[key] ? "text" : "password"}
+                        value={form[field]}
+                        onChange={onChange}
+                        placeholder={placeholder || "••••••••"}
+                        className="pr-12 border-slate-200 focus:border-indigo-500 focus:ring-indigo-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setShowPw((s) => ({ ...s, [key]: !s[key] }))
+                        }
+                        className="absolute inset-y-0 right-0 px-3 flex items-center text-slate-400 hover:text-slate-600 transition-colors"
+                        aria-label={showPw[key] ? "Hide password" : "Show password"}
+                      >
+                        {showPw[key] ? (
+                          <EyeOff className="w-5 h-5" />
+                        ) : (
+                          <Eye className="w-5 h-5" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                
+                <div className="pt-4">
+                  <Button
+                    disabled={pwLoading}
+                    type="submit"
+                    variant="primary"
+                    className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold py-3 px-4 rounded-xl transition-all duration-200 transform hover:scale-[1.02] disabled:hover:scale-100"
+                  >
+                    {pwLoading ? (
+                      <div className="flex items-center justify-center space-x-2">
+                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                        <span>Updating...</span>
+                      </div>
+                    ) : (
+                      "Update Password"
+                    )}
+                  </Button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

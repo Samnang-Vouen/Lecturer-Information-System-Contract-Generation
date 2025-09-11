@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useRef, useCallback, useMemo } from "react";
-import { Plus } from 'lucide-react';
+import React, { useEffect, useState, useRef, useCallback } from "react";
+import { Plus, AlertCircle } from 'lucide-react';
 import ClassesTable from "../../components/ClassesTable";
 import ClassFormDialog from "../../components/ClassFormDialog";
 import AssignCoursesDialog from "../../components/AssignCoursesDialog";
@@ -9,13 +9,6 @@ import Button from "../../components/ui/Button";
 import Label from "../../components/ui/Label";
 import Select, { SelectItem } from "../../components/ui/Select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/Dialog";
-// pdfmake for client-side PDF generation
-import pdfMake from "pdfmake/build/pdfmake.js";
-import pdfFonts from "pdfmake/build/vfs_fonts.js";
-import { useAuthStore } from "../../store/useAuthStore";
-// Courses fetched from server-side endpoint
-// Stored in local state for assignment dialog
-
 
 const initialClassState = {
   name: "",
@@ -23,6 +16,7 @@ const initialClassState = {
   year_level: "",
   academic_year: "",
   total_class: 1,
+  courses: [], // Add courses to initial state
 };
 
 export default function ClassesManagement() {
@@ -37,6 +31,7 @@ export default function ClassesManagement() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isCourseAssignDialogOpen, setIsCourseAssignDialogOpen] = useState(false);
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
+  const [isErrorDialogOpen, setIsErrorDialogOpen] = useState(false); // Add error dialog state
   const [classToDelete, setClassToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -53,22 +48,28 @@ export default function ClassesManagement() {
   const [exporting, setExporting] = useState(false);
   const [previewMode, setPreviewMode] = useState(false);
 
-  const [page,setPage] = useState(1);
-  const [hasMore,setHasMore] = useState(true);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
   const limit = 10;
   const loadingRef = useRef(false);
   const sentinelRef = useRef(null);
 
-  const loadClasses = useCallback(async (reset=false)=>{
-    if(loadingRef.current) return;
+  // Show error popup
+  const showErrorPopup = (message) => {
+    setError(message);
+    setIsErrorDialogOpen(true);
+  };
+
+  const loadClasses = useCallback(async (reset = false) => {
+    if (loadingRef.current) return;
     loadingRef.current = true;
-    if(reset){ setPage(1); setHasMore(true); setClasses([]); }
+    if (reset) { setPage(1); setHasMore(true); setClasses([]); }
     setLoading(true);
     try {
-      const targetPage = reset? 1 : page;
+      const targetPage = reset ? 1 : page;
       const res = await axios.get(`/classes?page=${targetPage}&limit=${limit}`);
       const payload = res.data;
-      if(Array.isArray(payload)) {
+      if (Array.isArray(payload)) {
         // legacy non-paginated shape
         setClasses(payload);
         setHasMore(false);
@@ -78,33 +79,35 @@ export default function ClassesManagement() {
       }
       setError("");
     } catch {
-      setError("Failed to load classes.");
+      showErrorPopup("Failed to load classes. Please try again.");
     } finally {
       setLoading(false);
       loadingRef.current = false;
     }
-  },[page,limit]);
+  }, [page, limit]);
 
   // Fetch classes from API
   useEffect(() => {
     loadClasses(true);
-  },[]);
+  }, []);
+
   useEffect(() => {
-    if(page>1) loadClasses();
-  },[page]);
-  useEffect(()=>{
-    if(!hasMore) return;
+    if (page > 1) loadClasses();
+  }, [page]);
+
+  useEffect(() => {
+    if (!hasMore) return;
     const el = sentinelRef.current;
-    if(!el) return;
+    if (!el) return;
     const observer = new IntersectionObserver(entries => {
       const first = entries[0];
-      if(first.isIntersecting && hasMore && !loading){
-        setPage(p=>p+1);
+      if (first.isIntersecting && hasMore && !loading) {
+        setPage(p => p + 1);
       }
     }, { threshold: 1 });
     observer.observe(el);
-    return ()=> observer.disconnect();
-  },[hasMore,loading]);
+    return () => observer.disconnect();
+  }, [hasMore, loading]);
 
   // Fetch course catalog
   useEffect(() => {
@@ -117,156 +120,64 @@ export default function ClassesManagement() {
       .catch(() => console.warn('Failed to load courses list'));
   }, []);
 
-  // Selection helpers for table
-  const toggleAll = (checked) => {
-    if (!checked) return setSelectedIds([]);
-    setSelectedIds(filteredClasses.map(c=>c.id));
-  };
-  const toggleOne = (id) => {
-    setSelectedIds(prev => prev.includes(id) ? prev.filter(x=>x!==id) : [...prev, id]);
-  };
+  // Validate academic year
+  const validateAcademicYear = (academicYear) => {
+    // Check format YYYY-YYYY
+    const academicYearPattern = /^\d{4}-\d{4}$/;
+    if (!academicYearPattern.test(academicYear)) {
+      return "Academic year must be in format YYYY-YYYY (e.g., 2024-2025)";
+    }
 
-  // Build mapping for course details
-  const courseMap = useMemo(()=>{
-    const m = new Map();
-    availableCourses.forEach(c=> m.set(c.course_code, c));
-    return m;
-  }, [availableCourses]);
+    // Validate that academic year makes sense
+    const [startYear, endYear] = academicYear.split('-').map(Number);
+    if (endYear !== startYear + 1) {
+      return "Academic year end year must be exactly one year after start year";
+    }
 
-  // Generate pdfmake document definition per requirements
-  const buildDocDefinition = (classesList) => {
-    // Utility: build header blocks for each class
-    const content = [];
-    const adminDepartment = authUser?.department || 'Admin Department';
-    classesList.forEach((cls, idx) => {
-      // Header 1
-      content.push({
-        columns: [
-          { text: String(cls.academic_year || ''), bold: true },
-          { text: 'CADT', alignment: 'center' },
-          { text: 'IDT', alignment: 'center' },
-          { text: String(adminDepartment), alignment: 'right' }
-        ],
-        margin: [0, idx === 0 ? 0 : 20, 0, 2]
-      });
-      // Header 2
-      content.push({
-        columns: [
-          { text: `Year Level: ${cls.year_level || ''}` },
-          { text: `Term: ${cls.term || ''}`, alignment: 'center' },
-          { text: `Class: ${cls.name || ''}`, alignment: 'right' }
-        ],
-        margin: [0, 0, 0, 8]
-      });
+    // Check if year is reasonable (not too far in past or future)
+    const currentYear = new Date().getFullYear();
+    if (startYear < currentYear - 10 || startYear > currentYear + 10) {
+      return "Academic year must be within a reasonable range";
+    }
 
-      // Table body rows from assigned courses
-      const rows = [];
-      rows.push([
-        { text: 'Term', style: 'tableHeader' },
-        { text: 'No', style: 'tableHeader' },
-        { text: 'Subject', style: 'tableHeader' },
-        { text: 'Hour', style: 'tableHeader' },
-        { text: 'Credit', style: 'tableHeader' },
-        { text: 'Total Class', style: 'tableHeader' },
-      ]);
-      const courses = Array.isArray(cls.courses) ? cls.courses : [];
-      courses.forEach((code, i) => {
-        const course = courseMap.get(code) || {};
-        rows.push([
-          String(cls.term || ''),
-          String(i + 1),
-          String(course.course_name || code || ''),
-          String(course.hours ?? ''),
-          String(course.credits ?? ''),
-          String(cls.total_class ?? '')
-        ]);
-      });
-      if (!courses.length) {
-        rows.push([
-          String(cls.term || ''),
-          '—',
-          'No courses assigned',
-          '',
-          '',
-          String(cls.total_class ?? '')
-        ]);
-      }
-      content.push({
-        table: {
-          headerRows: 1,
-          widths: ['auto','auto','*','auto','auto','auto'],
-          body: rows,
-        },
-        layout: {
-          hLineColor: '#e5e7eb',
-          vLineColor: '#e5e7eb',
-        }
-      });
-    });
-
-    return {
-      pageSize: 'A4',
-  pageOrientation: 'landscape',
-      pageMargins: [32, 36, 32, 36],
-      content,
-      styles: {
-        tableHeader: { bold: true, fillColor: '#f3f4f6' }
-      },
-      defaultStyle: { fontSize: 10 }
-    };
+    return null; // No error
   };
 
-  // Open preview and build PDF URL
-  const openExportPreview = () => {
-    setError("");
-    setPreviewMode(true);
-  };
-
-  const generateSelectedPreview = () => {
-    if (!selectedIds.length) {
-      setError('Please select at least one class to preview.');
+  // Add class with course assignment
+  const handleAddClass = () => {
+    // Validate academic year
+    const academicYearError = validateAcademicYear(newClass.academic_year);
+    if (academicYearError) {
+      showErrorPopup(academicYearError);
       return;
     }
-    const list = filteredClasses.filter(c=> selectedIds.includes(c.id));
-    if (!list.length) return;
-    setExporting(true);
-    try {
-      pdfMake.vfs = (pdfFonts && (pdfFonts.vfs || (pdfFonts.pdfMake && pdfFonts.pdfMake.vfs))) || pdfMake.vfs || {};
-      const dd = buildDocDefinition(list);
-      const pdfDocGenerator = pdfMake.createPdf(dd);
-      pdfDocGenerator.getBlob((blob)=>{
-        const url = URL.createObjectURL(blob);
-        setExportUrl(url);
-        setIsExportDialogOpen(true);
-      });
-    } finally {
-      setExporting(false);
+
+    // Validate required fields
+    if (!newClass.name.trim()) {
+      showErrorPopup("Class name is required");
+      return;
     }
-  };
 
-  const cancelPreviewSelection = () => {
-    setPreviewMode(false);
-    setSelectedIds([]);
-    setError("");
-  };
+    if (!newClass.term.trim()) {
+      showErrorPopup("Term is required");
+      return;
+    }
 
-  const downloadPdf = () => {
-    const list = selectedIds.length ? filteredClasses.filter(c=> selectedIds.includes(c.id)) : filteredClasses;
-    pdfMake.vfs = (pdfFonts && (pdfFonts.vfs || (pdfFonts.pdfMake && pdfFonts.pdfMake.vfs))) || pdfMake.vfs || {};
-    const dd = buildDocDefinition(list);
-    pdfMake.createPdf(dd).download(`classes_${Date.now()}.pdf`);
-  };
+    if (!newClass.year_level.trim()) {
+      showErrorPopup("Year level is required");
+      return;
+    }
 
-
-  // Add class
-  const handleAddClass = () => {
     setLoading(true);
-  const payload = { ...newClass };
-  // Normalize total_class (string -> int, default 1)
-  const parsedTotal = parseInt(payload.total_class, 10);
-  payload.total_class = Number.isFinite(parsedTotal) && parsedTotal > 0 ? parsedTotal : 1;
-  // Include any selected courses chosen during add flow
-  axios.post("/classes", { ...payload, courses: selectedCourses })
+    const payload = { ...newClass };
+    // Normalize total_class (string -> int, default 1)
+    const parsedTotal = parseInt(payload.total_class, 10);
+    payload.total_class = Number.isFinite(parsedTotal) && parsedTotal > 0 ? parsedTotal : 1;
+    
+    // Include selected courses in the payload
+    payload.courses = selectedCourses;
+
+    axios.post("/classes", payload)
       .then(res => {
         setClasses(prev => [...prev, res.data]);
         setIsAddDialogOpen(false);
@@ -274,30 +185,65 @@ export default function ClassesManagement() {
         setSelectedCourses([]);
         setError("");
       })
-      .catch(() => setError("Failed to add class."))
+      .catch((err) => {
+        const errorMessage = err.response?.data?.message || "Failed to add class. Please try again.";
+        showErrorPopup(errorMessage);
+      })
       .finally(() => setLoading(false));
   };
 
   // Edit class
   const handleEditClass = (classItem) => {
     setEditingClass(classItem);
+    setSelectedCourses(Array.isArray(classItem.courses) ? classItem.courses : []);
     setIsEditDialogOpen(true);
   };
 
   // Update class
   const handleUpdateClass = () => {
+    // Validate academic year
+    const academicYearError = validateAcademicYear(editingClass.academic_year);
+    if (academicYearError) {
+      showErrorPopup(academicYearError);
+      return;
+    }
+
+    // Validate required fields
+    if (!editingClass.name.trim()) {
+      showErrorPopup("Class name is required");
+      return;
+    }
+
+    if (!editingClass.term.trim()) {
+      showErrorPopup("Term is required");
+      return;
+    }
+
+    if (!editingClass.year_level.trim()) {
+      showErrorPopup("Year level is required");
+      return;
+    }
+
     setLoading(true);
-  const payload = { ...editingClass };
-  const parsedTotal = parseInt(payload.total_class, 10);
-  payload.total_class = Number.isFinite(parsedTotal) && parsedTotal > 0 ? parsedTotal : 1;
-  axios.put(`/classes/${editingClass.id}`, payload)
+    const payload = { ...editingClass };
+    const parsedTotal = parseInt(payload.total_class, 10);
+    payload.total_class = Number.isFinite(parsedTotal) && parsedTotal > 0 ? parsedTotal : 1;
+    
+    // Include selected courses in the payload
+    payload.courses = selectedCourses;
+
+    axios.put(`/classes/${editingClass.id}`, payload)
       .then(res => {
         setClasses(prev => prev.map(c => c.id === editingClass.id ? res.data : c));
         setIsEditDialogOpen(false);
         setEditingClass(null);
+        setSelectedCourses([]);
         setError("");
       })
-      .catch(() => setError("Failed to update class."))
+      .catch((err) => {
+        const errorMessage = err.response?.data?.message || "Failed to update class. Please try again.";
+        showErrorPopup(errorMessage);
+      })
       .finally(() => setLoading(false));
   };
 
@@ -321,8 +267,9 @@ export default function ClassesManagement() {
       setError("");
       setIsConfirmDeleteOpen(false);
       setClassToDelete(null);
-    } catch (e) {
-      setError("Failed to delete class.");
+    } catch (err) {
+      const errorMessage = err.response?.data?.message || "Failed to delete class. Please try again.";
+      showErrorPopup(errorMessage);
     } finally {
       setDeleting(false);
     }
@@ -343,8 +290,11 @@ export default function ClassesManagement() {
         const list = Array.isArray(payload) ? payload : (Array.isArray(payload.data) ? payload.data : []);
         setAvailableCourses(list);
       })
-      .catch((err)=>{ console.debug('Failed to load courses list', err); })
-      .finally(()=> setIsCourseAssignDialogOpen(true));
+      .catch((err) => { 
+        console.debug('Failed to load courses list', err); 
+        showErrorPopup("Failed to load courses list");
+      })
+      .finally(() => setIsCourseAssignDialogOpen(true));
   };
 
   // Save course assignment
@@ -364,7 +314,10 @@ export default function ClassesManagement() {
         setSelectedCourses([]);
         setError("");
       })
-      .catch(() => setError("Failed to assign courses."))
+      .catch((err) => {
+        const errorMessage = err.response?.data?.message || "Failed to assign courses. Please try again.";
+        showErrorPopup(errorMessage);
+      })
       .finally(() => setLoading(false));
   };
 
@@ -373,11 +326,16 @@ export default function ClassesManagement() {
     setSelectedCourses(prev => prev.includes(courseCode) ? prev.filter(c => c !== courseCode) : [...prev, courseCode]);
   };
 
-  // Academic year filter
+  // Academic year filter with validation
   const getUniqueAcademicYears = () => {
-    const years = [...new Set(classes.map(c => c.academic_year))];
+    const years = [...new Set(classes.map(c => c.academic_year))].filter(year => {
+      // Only include valid academic years
+      const academicYearPattern = /^\d{4}-\d{4}$/;
+      return academicYearPattern.test(year);
+    });
     return years.sort();
   };
+
   const getFilteredClasses = () => {
     if (selectedAcademicYear === "all") return classes;
     return classes.filter(c => c.academic_year === selectedAcademicYear);
@@ -385,161 +343,150 @@ export default function ClassesManagement() {
   const filteredClasses = getFilteredClasses();
 
   return (
-      <div className="p-4 sm:p-8 space-y-6">
-        {/* NOTE: Server-side pagination (limit=10) with infinite scroll for classes implemented. */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-800 mb-1">Classes Management</h1>
-            <p className="text-gray-600">Manage academic classes and assign courses</p>
-          </div>
-          <Button className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2" onClick={() => setIsAddDialogOpen(true)}>
-            <Plus className="h-4 w-4"/> Add Class
-          </Button>
+    <div className="p-8 space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-800 mb-1">Classes Management</h1>
+          <p className="text-gray-600">Manage academic classes and assign courses</p>
         </div>
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
-          <div className="flex w-full sm:w-auto items-center gap-2">
-            <Label className="text-gray-700" htmlFor="academic-year-filter">Filter by Academic Year:</Label>
-            <div className="w-full sm:w-48">
-              <Select
-                value={selectedAcademicYear}
-                onValueChange={setSelectedAcademicYear}
-                placeholder="Select academic year"
+        <Button className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2" onClick={() => setIsAddDialogOpen(true)}>
+          <Plus className="h-4 w-4" /> Add Class
+        </Button>
+      </div>
+
+      {/* Filter Controls */}
+      <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2">
+          <Label className="text-gray-700" htmlFor="academic-year-filter">Filter by Academic Year:</Label>
+          <div className="w-48">
+            <Select
+              value={selectedAcademicYear}
+              onValueChange={setSelectedAcademicYear}
+              placeholder="Select academic year"
+            >
+              <SelectItem value="all">All Academic Years</SelectItem>
+              {getUniqueAcademicYears().map(year => (
+                <SelectItem key={year} value={year}>{year}</SelectItem>
+              ))}
+            </Select>
+          </div>
+        </div>
+        <div className="text-sm text-gray-500">
+          Showing <span className="font-medium text-gray-700">{filteredClasses.length}</span> of <span className="font-medium text-gray-700">{classes.length}</span> classes
+        </div>
+      </div>
+
+      {/* Error Message */}
+      {error && !isErrorDialogOpen && <div className="text-sm mb-2 text-red-600">{error}</div>}
+
+      {/* Classes Table */}
+      <ClassesTable
+        classes={filteredClasses}
+        onEdit={handleEditClass}
+        onDelete={handleDeleteClass}
+        onAssignCourses={handleAssignCourses}
+        loading={loading}
+        courseCatalog={availableCourses}
+        title="Academic Classes"
+        description="Overview of all academic classes in your department"
+      />
+
+      {/* Error Dialog */}
+      <Dialog open={isErrorDialogOpen} onOpenChange={setIsErrorDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertCircle className="h-5 w-5" />
+              Error
+            </DialogTitle>
+          </DialogHeader>
+          <div className="px-2 pb-2 space-y-4">
+            <p className="text-sm text-gray-700">{error}</p>
+            <div className="flex justify-center">
+              <Button
+                onClick={() => setIsErrorDialogOpen(false)}
+                className="bg-red-600 hover:bg-red-700 text-white min-w-[100px]"
               >
-                <SelectItem value="all">All Academic Years</SelectItem>
-                {getUniqueAcademicYears().map(year => (
-                  <SelectItem key={year} value={year}>{year}</SelectItem>
-                ))}
-              </Select>
+                OK
+              </Button>
             </div>
           </div>
-          <div className="text-sm text-gray-500 w-full sm:w-auto">
-            Showing <span className="font-medium text-gray-700">{filteredClasses.length}</span> of <span className="font-medium text-gray-700">{classes.length}</span> classes
-          </div>
-          <div className="w-full sm:w-auto sm:ml-auto flex flex-wrap items-center gap-2">
-            {!previewMode ? (
-              <Button
-                className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white"
-                onClick={openExportPreview}
-                disabled={!filteredClasses.length}
-              >Download</Button>
-            ) : (
-              <>
-                <span className="w-full sm:w-auto text-sm text-gray-600">Selected: <span className="font-medium">{selectedIds.length}</span></span>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirm Delete Dialog */}
+      {isConfirmDeleteOpen && classToDelete && (
+        <Dialog open={isConfirmDeleteOpen} onOpenChange={(open) => { setIsConfirmDeleteOpen(open); if (!open) setClassToDelete(null); }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Confirm Deletion</DialogTitle>
+            </DialogHeader>
+            <div className="px-2 pb-2 text-center space-y-4">
+              <p className="text-sm text-gray-700">
+                Do you want to delete this {classToDelete?.name || 'class'}?
+              </p>
+              <div className="flex flex-col sm:flex-row gap-2 sm:justify-center">
                 <Button
-                  className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white"
-                  onClick={generateSelectedPreview}
-                  disabled={selectedIds.length === 0}
-                >Generate Preview</Button>
+                  onClick={performDeleteClass}
+                  className="bg-red-600 hover:bg-red-700 text-white sm:min-w-[120px]"
+                  disabled={deleting}
+                >{deleting ? 'Deleting…' : 'OK'}</Button>
                 <Button
                   variant="outline"
-                  className="w-full sm:w-auto border-gray-200 text-gray-700"
-                  onClick={cancelPreviewSelection}
+                  onClick={() => { setIsConfirmDeleteOpen(false); setClassToDelete(null); }}
+                  className="sm:min-w-[120px]"
+                  disabled={deleting}
                 >Cancel</Button>
-              </>
-            )}
-          </div>
-        </div>
-        {error && <div className="text-sm mb-2 text-red-600">{error}</div>}
-        <div className="overflow-x-auto -mx-4 sm:mx-0">
-          <ClassesTable
-            classes={filteredClasses}
-            onEdit={handleEditClass}
-            onDelete={handleDeleteClass}
-            onAssignCourses={handleAssignCourses}
-            loading={loading}
-            courseCatalog={availableCourses}
-            title="Academic Classes"
-            description="Overview of all academic classes in your department"
-            selectable={previewMode}
-            selectedIds={selectedIds}
-            onToggleOne={toggleOne}
-            onToggleAll={toggleAll}
-          />
-        </div>
-        {/* Confirm Delete Dialog */}
-        {isConfirmDeleteOpen && classToDelete && (
-          <Dialog open={isConfirmDeleteOpen} onOpenChange={(open)=> { setIsConfirmDeleteOpen(open); if (!open) setClassToDelete(null); }}>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Confirm Deletion</DialogTitle>
-              </DialogHeader>
-              <div className="px-2 pb-2 text-center space-y-4">
-                <p className="text-sm text-gray-700">
-                  Do you want to delete this {classToDelete?.name || 'class'}?
-                </p>
-                <div className="flex flex-col sm:flex-row gap-2 sm:justify-center">
-                  <Button
-                    onClick={performDeleteClass}
-                    className="bg-red-600 hover:bg-red-700 text-white sm:min-w-[120px]"
-                    disabled={deleting}
-                  >{deleting ? 'Deleting…' : 'OK'}</Button>
-                  <Button
-                    variant="outline"
-                    onClick={()=> { setIsConfirmDeleteOpen(false); setClassToDelete(null); }}
-                    className="sm:min-w-[120px]"
-                    disabled={deleting}
-                  >Cancel</Button>
-                </div>
               </div>
-            </DialogContent>
-          </Dialog>
-        )}
-        <div ref={sentinelRef} className="h-10 flex items-center justify-center text-xs text-gray-500">
-          {loading && hasMore && <span>Loading more...</span>}
-          {/* {!hasMore && !loading && <span className="text-gray-400">No more classes</span>} */}
-        </div>
-        <ClassFormDialog
-          open={isAddDialogOpen}
-          onOpenChange={setIsAddDialogOpen}
-          onSubmit={handleAddClass}
-          classData={newClass}
-          setClassData={setNewClass}
-          isEdit={false}
-          onAssignCourses={() => handleAssignCourses(null)}
-          selectedCourses={selectedCourses}
-          courseCatalog={availableCourses}
-        />
-  <ClassFormDialog
-          open={isEditDialogOpen}
-          onOpenChange={setIsEditDialogOpen}
-          onSubmit={handleUpdateClass}
-          classData={editingClass || initialClassState}
-          setClassData={setEditingClass}
-          isEdit={true}
-        />
-        <AssignCoursesDialog
-          open={isCourseAssignDialogOpen}
-          onOpenChange={setIsCourseAssignDialogOpen}
-          availableCourses={availableCourses}
-          selectedCourses={selectedCourses}
-          onToggleCourse={handleCourseToggle}
-          onSave={handleSaveCourseAssignment}
-          onCancel={() => setIsCourseAssignDialogOpen(false)}
-          className={assigningClass?.name}
-        />
-        {/* Export Preview Dialog */}
-        {isExportDialogOpen && (
-          <Dialog open={isExportDialogOpen} onOpenChange={(open)=> { setIsExportDialogOpen(open); if(!open && exportUrl){ URL.revokeObjectURL(exportUrl); setExportUrl(""); } if(!open){ setPreviewMode(false); } }}>
-            <DialogContent className="max-w-[1280px] w-[96vw]">
-              <DialogHeader>
-                <DialogTitle>PDF Preview</DialogTitle>
-              </DialogHeader>
-              <div className="h-[80vh]">
-                {exporting ? (
-                  <div className="h-full flex items-center justify-center text-gray-500">Generating preview…</div>
-                ) : exportUrl ? (
-                  <iframe title="PDF Preview" src={exportUrl} className="w-full h-full border border-gray-200 rounded-md shadow-sm" />
-                ) : (
-                  <div className="h-full flex items-center justify-center text-gray-400">No preview</div>
-                )}
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={()=> setIsExportDialogOpen(false)}>Close</Button>
-                <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={downloadPdf}>Download</Button>
-              </div>
-            </DialogContent>
-          </Dialog>
-        )}
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Infinite Scroll Sentinel */}
+      <div ref={sentinelRef} className="h-10 flex items-center justify-center text-xs text-gray-500">
+        {loading && hasMore && <span>Loading more...</span>}
+        {!hasMore && !loading && <span className="text-gray-400">No more classes</span>}
       </div>
+
+      {/* Add Class Dialog */}
+      <ClassFormDialog
+        open={isAddDialogOpen}
+        onOpenChange={setIsAddDialogOpen}
+        onSubmit={handleAddClass}
+        classData={newClass}
+        setClassData={setNewClass}
+        isEdit={false}
+        availableCourses={availableCourses}
+        selectedCourses={selectedCourses}
+        onCourseToggle={handleCourseToggle}
+      />
+
+      {/* Edit Class Dialog */}
+      <ClassFormDialog
+        open={isEditDialogOpen}
+        onOpenChange={setIsEditDialogOpen}
+        onSubmit={handleUpdateClass}
+        classData={editingClass || initialClassState}
+        setClassData={setEditingClass}
+        isEdit={true}
+        availableCourses={availableCourses}
+        selectedCourses={selectedCourses}
+        onCourseToggle={handleCourseToggle}
+      />
+
+      {/* Assign Courses Dialog */}
+      <AssignCoursesDialog
+        open={isCourseAssignDialogOpen}
+        onOpenChange={setIsCourseAssignDialogOpen}
+        availableCourses={availableCourses}
+        selectedCourses={selectedCourses}
+        onToggleCourse={handleCourseToggle}
+        onSave={handleSaveCourseAssignment}
+        onCancel={() => setIsCourseAssignDialogOpen(false)}
+        className={assigningClass?.name}
+      />
+    </div>
   );
 }

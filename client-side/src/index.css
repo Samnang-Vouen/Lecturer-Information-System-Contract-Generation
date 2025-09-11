@@ -3,6 +3,40 @@
 @tailwind components;
 @tailwind utilities;
 
+body { 
+  @apply bg-gray-50 text-gray-800 min-h-screen font-sans; 
+  /* Smooth scrolling for better UX */
+  scroll-behavior: smooth;
+}
+
+/* Custom scrollbar styling for webkit browsers */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-gray-100 rounded-full;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 rounded-full hover:bg-gray-400;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-400;
+}
+
+/* Enhanced focus states for accessibility */
+*:focus-visible {
+  outline: 2px solid theme('colors.blue.500');
+  outline-offset: 2px;
+}
+
+/* Smooth transitions for interactive elements */
+button, a, input, textarea, select {
+  transition: all 0.2s ease-in-out;
+}
 body { @apply bg-gray-50 text-gray-800 min-h-screen; }
 
 /* Global interactive cursor styles */
@@ -83,18 +117,34 @@ body { @apply bg-gray-50 text-gray-800 min-h-screen; }
 }
 
 /* Ensure typed input text is solid black across browsers */
-input, textarea, select { color: #000; }
+input, textarea, select { 
+  color: #000; 
+  @apply border-gray-300 rounded-lg focus:border-blue-500 focus:ring-blue-500;
+}
+
 /* Lighter placeholder */
-input::placeholder, textarea::placeholder { color: #9ca3af; opacity: .4; }
+input::placeholder, textarea::placeholder { 
+  color: #9ca3af; 
+  opacity: .6; 
+}
+
 /* Force white background for all inputs (including WebKit inner area & spin buttons) */
-input, textarea, select { background-color:#fff; }
-input[type=number] { background-color:#fff; }
+input, textarea, select { 
+  background-color: #fff; 
+  @apply shadow-sm;
+}
+
+input[type=number] { background-color: #fff; }
 input[type=number]::-webkit-inner-spin-button,
-input[type=number]::-webkit-outer-spin-button { background:#fff; }
+input[type=number]::-webkit-outer-spin-button { background: #fff; }
+
 /* Firefox number input spinner removal fallback */
-input[type=number] { -moz-appearance:textfield; appearance: textfield; }
+input[type=number] { -moz-appearance: textfield; appearance: textfield; }
+
 /* Force light UI for native number spinners (Chrome/Edge sometimes shows dark background) */
 input[type=number] { color-scheme: light; }
+
+/* Chrome autofill enhanced styling */
 
 /* Hide native date picker icon (we use a custom calendar button) */
 input[type="date"]::-webkit-calendar-picker-indicator { display: none; -webkit-appearance: none; }
@@ -111,4 +161,68 @@ input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin
 input:-webkit-autofill, textarea:-webkit-autofill, select:-webkit-autofill {
 	-webkit-text-fill-color: #000 !important;
 	transition: background-color 5000s ease-in-out 0s;
+	@apply border-blue-300;
+}
+
+/* Enhanced card styles */
+.card {
+  @apply bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden;
+  transition: box-shadow 0.2s ease-in-out, transform 0.2s ease-in-out;
+}
+
+.card:hover {
+  @apply shadow-md;
+  transform: translateY(-1px);
+}
+
+/* Enhanced button hover effects */
+.btn-primary {
+  @apply bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800;
+}
+
+.btn-secondary {
+  @apply bg-gradient-to-r from-gray-100 to-gray-200 hover:from-gray-200 hover:to-gray-300;
+}
+
+/* Loading animation */
+@keyframes pulse-slow {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: .5;
+  }
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Notification styles */
+.notification {
+  @apply fixed top-4 right-4 z-50 max-w-sm bg-white border border-gray-200 rounded-lg shadow-lg p-4;
+  animation: slideInRight 0.3s ease-out;
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* Enhanced mobile responsiveness */
+@media (max-width: 640px) {
+  .container {
+    @apply px-4;
+  }
+}
+
+/* Text selection styling */
+::selection {
+  @apply bg-blue-100 text-blue-900;
 }

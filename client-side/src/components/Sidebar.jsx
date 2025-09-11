@@ -9,13 +9,36 @@ import {
   FileText, 
   LogOut, 
   Building2, 
-  UserCheck,
+  Settings,
   PanelRightClose,
   PanelRightOpen,
   BookOpen,
   School,
-  X
+  X,
+  MapPin,
+  UserCog,
+  GraduationCap,
+  UsersIcon,
+  FileBarChart,
+  Shield,
+  ChevronDown,
+  Briefcase
 } from "lucide-react";
+
+// Font styles
+const sidebarFont = {
+  fontFamily: `'Inter', 'Segoe UI', Arial, sans-serif`,
+  fontSize: '18px',
+  fontWeight: 400,
+  letterSpacing: '0.01em'
+};
+
+const sidebarHeadingFont = {
+  fontFamily: `'Inter', 'Segoe UI', Arial, sans-serif`,
+  fontSize: '20px',
+  fontWeight: 600,
+  letterSpacing: '0.01em'
+};
 
 /**
  * @typedef {'superadmin' | 'admin' | 'lecturer' | 'management'} UserRole
@@ -25,6 +48,8 @@ import {
  * @property {string} href - The href link of the navigation item
  * @property {React.ComponentType<{className?: string}>} icon - The icon component
  * @property {UserRole[]} roles - The roles that can see this item
+ * @property {string} [category] - Category for organizing nav items
+ * @property {boolean} [hasSubmenu] - Whether this item has submenu items
  */
 
 /**
@@ -33,117 +58,102 @@ import {
 const navItems = [
   {
     title: "Dashboard",
-    href: "/dashboard", // placeholder; will be replaced dynamically per role
+    href: "/dashboard",
     icon: LayoutDashboard,
     roles: ["superadmin", "admin", "lecturer", "management"],
+    category: null
   },
   {
-    title: "My Profile",
-    href: "/admin/profile",
-    icon: UserCheck,
+    title: "Academic Management",
+    href: "/admin/academic",
+    icon: GraduationCap,
     roles: ["admin"],
+    category: "academic",
+    hasSubmenu: true
   },
   {
-    title: "Courses Creation",
-    href: "/admin/courses",
-    icon: BookOpen,
+    title: "Personnel & HR",
+    href: "/admin/personnel",
+    icon: UsersIcon,
     roles: ["admin"],
-  },
-  {
-    title: "Classes Management",
-    href: "/admin/classes",
-    icon: School,
-    roles: ["admin"],
-  },
-  {
-    title: "Recruitment",
-    href: "/admin/recruitment",
-    icon: UserPlus,
-    roles: ["admin"],
-  },
-  {
-    title: "Lecturer Management",
-    href: "/admin/lecturers",
-    icon: Users,
-    roles: ["admin"],
-  },
-  {
-    title: "Course Mapping",
-    href: "/admin/course-mapping",
-    icon: BookOpen,
-    roles: ["admin"],
-  },
-  {
-    title: "Contract Generation",
-    href: "/admin/contracts",
-    icon: FileText,
-    roles: ["admin"],
-  },
-  {
-    title: "User Management",
-    href: "/superadmin/users",
-    icon: Users,
-    roles: ["superadmin"],
-  },
-  {
-    title: "My Profile",
-    href: "/lecturer/profile",
-    icon: UserCheck,
-    roles: ["lecturer"],
+    category: "personnel",
+    hasSubmenu: true
   },
   {
     title: "My Contracts",
-  href: "/lecturer/my-contracts",
-    icon: FileText,
+    href: "/lecturer/my-contracts",
+    icon: Briefcase,
     roles: ["lecturer"],
-  },
-  // Management minimal menu
-  {
-    title: "My Profile",
-    href: "/management/profile",
-    icon: UserCheck,
-    roles: ["management"],
+    category: null
   },
   {
-    title: "Contract Management",
-    href: "/management/contracts",
-    icon: FileText,
-    roles: ["management"],
+    title: "System Administration",
+    href: "/superadmin/system",
+    icon: Shield,
+    roles: ["superadmin"],
+    category: "system",
+    hasSubmenu: true
+  },
+  {
+    title: "Profile Settings",
+    href: "/admin/profile",
+    icon: Settings,
+    roles: ["admin"],
+    category: null
+  },
+  {
+    title: "Account Settings", 
+    href: "/lecturer/profile",
+    icon: Settings,
+    roles: ["lecturer"],
+    category: null
   },
 ];
 
-/**
- * Sidebar component that displays navigation based on user role
- * 
- * @param {Object} props - Component props
- * @param {Object} [props.user] - User object (can be passed from server-side)
- * @param {string} props.user.name - User name
- * @param {UserRole} props.user.role - User role
- * @param {Function} [props.onLogout] - Logout function
- * @param {boolean} [props.mobileOpen] - If true, show mobile overlay
- * @param {Function} [props.onClose] - Close handler for mobile overlay
- * @returns {React.ReactElement|null}
- */
 export function Sidebar({ user: userProp, onLogout, mobileOpen = false, onClose = () => {} }) {
   const location = useLocation();
   const { user: storeUser, logout: storeLogout } = useAuthStore();
-  // Initialize from localStorage immediately to avoid post-mount state flip animation on route changes
+  
   const [collapsed, setCollapsed] = useState(() => {
-    try { return localStorage.getItem('sidebarCollapsed') === 'true'; } catch { /* ignore read errors (e.g., SSR) */ return false; }
+    try { 
+      return localStorage.getItem('sidebarCollapsed') === 'true'; 
+    } catch { 
+      return false; 
+    }
+  });
+
+  const [expandedItems, setExpandedItems] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('expandedItems') || '{}');
+    } catch {
+      return {};
+    }
   });
 
   const toggleCollapsed = () => {
     setCollapsed(prev => {
       const next = !prev;
-      try { localStorage.setItem('sidebarCollapsed', String(next)); } catch { /* ignore write errors */ }
+      try { 
+        localStorage.setItem('sidebarCollapsed', String(next)); 
+      } catch { /* ignore write errors */ }
       return next;
     });
   };
 
-  // Use provided user from props (SSR) or fallback to client-side context
+  const toggleItem = (itemTitle) => {
+    if (collapsed) return;
+    setExpandedItems(prev => {
+      const next = { ...prev, [itemTitle]: !prev[itemTitle] };
+      try {
+        localStorage.setItem('expandedItems', JSON.stringify(next));
+      } catch { /* ignore write errors */ }
+      return next;
+    });
+  };
+
   const user = userProp || storeUser;
   const logout = onLogout || storeLogout;
-  // Close on escape when mobile open (hook must be declared unconditionally)
+
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === 'Escape' && mobileOpen) onClose();
@@ -152,7 +162,6 @@ export function Sidebar({ user: userProp, onLogout, mobileOpen = false, onClose 
     return () => window.removeEventListener('keydown', onKey);
   }, [mobileOpen, onClose]);
 
-  // Don't render sidebar if no user
   if (!user) return null;
 
   // Filter nav items based on user role
@@ -160,16 +169,21 @@ export function Sidebar({ user: userProp, onLogout, mobileOpen = false, onClose 
     item.roles.includes(user.role)
   );
 
-  // Helper function to determine if a link is active
   const isActive = (href, title) => {
-    if (title === 'Dashboard') return location.pathname === href; // exact match only
+    if (title === 'Dashboard') {
+      const roleRoot = {
+        superadmin: '/superadmin',
+        admin: '/admin',
+        lecturer: '/lecturer',
+        management: '/management'
+      }[user.role] || '/dashboard';
+      return location.pathname === roleRoot;
+    }
     return location.pathname === href || location.pathname.startsWith(href + '/');
   };
   
-  // Helper for classnames concatenation
   const cn = (...classes) => classes.filter(Boolean).join(' ');
 
-  // Format email prefix like "cs.department" -> "Cs Department" and append role if admin
   const formatUserDisplay = (u) => {
     if (!u?.email) return '';
     let base = u.email.split('@')[0].replace(/[._-]+/g, ' ');
@@ -178,188 +192,318 @@ export function Sidebar({ user: userProp, onLogout, mobileOpen = false, onClose 
       .filter(Boolean)
       .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
       .join(' ');
-    if (u.role === 'admin' && !/admin$/i.test(base)) {
-      base += ' Admin';
-    }
     return base;
   };
 
-  // NOTE: duplicate escape handler removed earlier to satisfy React Hooks rule
+  const getUserRoleLabel = (role) => {
+    const roleLabels = {
+      superadmin: 'System Administrator',
+      admin: 'Administrator',
+      lecturer: 'Lecturer',
+      management: 'Management'
+    };
+    return roleLabels[role] || role;
+  };
 
-  // Desktop persistent sidebar (hidden on small screens)
-  const desktopSidebar = (
-    <div className={`hidden md:flex h-full ${collapsed ? 'w-20' : 'w-64'} flex-col bg-white border-r border-gray-200 transition-[width] duration-300 ease-in-out`}>
-      <div className={`flex h-16 items-center ${collapsed ? 'justify-center px-0' : 'px-4'} border-b border-gray-200 transition-all duration-300 gap-2`}>
-        {!collapsed && (
-          <>
-            <Building2 className="h-8 w-8 text-blue-600 flex-shrink-0 transition-opacity duration-300" />
-            <span className="text-lg font-semibold text-gray-900 transition-opacity duration-300">LCMS</span>
-            <button
-              type="button"
-              onClick={toggleCollapsed}
-              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-              aria-expanded={!collapsed}
-              className="ml-auto text-gray-500 hover:text-gray-700 p-2 rounded transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
+  const renderNavItem = (item, isMobile = false) => {
+    const Icon = item.icon;
+    let href = item.href;
+    if (item.title === 'Dashboard') {
+      const roleRoot = {
+        superadmin: '/superadmin',
+        admin: '/admin',
+        lecturer: '/lecturer',
+        management: '/management'
+      }[user.role] || '/dashboard';
+      href = roleRoot;
+    }
+    const active = isActive(href, item.title);
+    const isExpanded = expandedItems[item.title];
+    return (
+      <div key={item.title} className="mb-1">
+        {item.hasSubmenu ? (
+          <button
+            onClick={() => toggleItem(item.title)}
+            className={cn(
+              "w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 hover:bg-blue-50",
+              collapsed ? 'justify-center px-3' : 'justify-start',
+              active ? "bg-blue-50 text-blue-900" : "text-gray-700 hover:text-blue-600"
+            )}
+            style={sidebarFont}
+            title={collapsed ? item.title : undefined}
+          >
+            <Icon className={cn(
+              "h-5 w-5 transition-colors duration-200 flex-shrink-0",
+              active ? "text-blue-600" : "text-gray-500"
+            )} />
+            {!collapsed && (
+              <>
+                <span className="flex-1 text-left truncate">{item.title}</span>
+                <ChevronDown className={cn(
+                  "h-4 w-4 transition-transform duration-200",
+                  isExpanded ? "transform rotate-0" : "transform -rotate-90"
+                )} />
+              </>
+            )}
+          </button>
+        ) : (
+          <Link 
+            to={href} 
+            className="block group" 
+            onClick={isMobile ? onClose : undefined}
+          >
+            <div className={cn(
+              "flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 hover:bg-blue-50",
+              collapsed ? 'justify-center px-3' : 'justify-start',
+              active ? "bg-blue-50 text-blue-600" : "text-gray-700 hover:text-blue-600"
+            )}
+            style={sidebarFont}
+            title={collapsed ? item.title : undefined}
             >
-              <PanelRightClose className="w-5 h-5" />
+              <Icon className={cn(
+                "h-5 w-5 transition-colors duration-200 flex-shrink-0",
+                active ? "text-blue-600" : "text-gray-500"
+              )} />
+              {!collapsed && (
+                <span className="flex-1 truncate">{item.title}</span>
+              )}
+            </div>
+          </Link>
+        )}
+        {/* Submenu items */}
+        {item.hasSubmenu && !collapsed && isExpanded && (
+          <div className="ml-6 mt-1 space-y-1">
+            {item.category === 'academic' && (
+              <>
+                <Link to="/admin/courses" onClick={isMobile ? onClose : undefined}>
+                  <div className={cn(
+                    "flex items-center gap-3 px-4 py-2 rounded-lg transition-all duration-200 hover:bg-blue-50",
+                    location.pathname.includes('/admin/courses') ? "bg-blue-50 text-blue-600" : "text-gray-600 hover:text-blue-600"
+                  )} style={sidebarFont}>
+                    <BookOpen className="h-4 w-4" />
+                    <span>Course Management</span>
+                  </div>
+                </Link>
+                <Link to="/admin/classes" onClick={isMobile ? onClose : undefined}>
+                  <div className={cn(
+                    "flex items-center gap-3 px-4 py-2 rounded-lg transition-all duration-200 hover:bg-blue-50",
+                    location.pathname.includes('/admin/classes') ? "bg-blue-50 text-blue-600" : "text-gray-600 hover:text-blue-600"
+                  )} style={sidebarFont}>
+                    <School className="h-4 w-4" />
+                    <span>Class Scheduling</span>
+                  </div>
+                </Link>
+                <Link to="/admin/course-mapping" onClick={isMobile ? onClose : undefined}>
+                  <div className={cn(
+                    "flex items-center gap-3 px-4 py-2 rounded-lg transition-all duration-200 hover:bg-blue-50",
+                    location.pathname.includes('/admin/course-mapping') ? "bg-blue-50 text-blue-600" : "text-gray-600 hover:text-blue-600"
+                  )} style={sidebarFont}>
+                    <MapPin className="h-4 w-4" />
+                    <span>Course Mapping</span>
+                  </div>
+                </Link>
+              </>
+            )}
+            {item.category === 'personnel' && (
+              <>
+                <Link to="/admin/recruitment" onClick={isMobile ? onClose : undefined}>
+                  <div className={cn(
+                    "flex items-center gap-3 px-4 py-2 rounded-lg transition-all duration-200 hover:bg-blue-50",
+                    location.pathname.includes('/admin/recruitment') ? "bg-blue-50 text-blue-600" : "text-gray-600 hover:text-blue-600"
+                  )} style={sidebarFont}>
+                    <UserPlus className="h-4 w-4" />
+                    <span>Lecturer Recruitment</span>
+                  </div>
+                </Link>
+                <Link to="/admin/lecturers" onClick={isMobile ? onClose : undefined}>
+                  <div className={cn(
+                    "flex items-center gap-3 px-4 py-2 rounded-lg transition-all duration-200 hover:bg-blue-50",
+                    location.pathname.includes('/admin/lecturers') ? "bg-blue-50 text-blue-600" : "text-gray-600 hover:text-blue-600"
+                  )} style={sidebarFont}>
+                    <Users className="h-4 w-4" />
+                    <span>Lecturer Management</span>
+                  </div>
+                </Link>
+              </>
+            )}
+            {item.category === 'system' && (
+              <Link to="/superadmin/users" onClick={isMobile ? onClose : undefined}>
+                <div className={cn(
+                  "flex items-center gap-3 px-4 py-2 rounded-lg transition-all duration-200 hover:bg-blue-50",
+                  location.pathname.includes('/superadmin/users') ? "bg-blue-50 text-blue-600" : "text-gray-600 hover:text-blue-600"
+                )} style={sidebarFont}>
+                  <UserCog className="h-4 w-4" />
+                  <span>User Management</span>
+                </div>
+              </Link>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Desktop sidebar
+  const desktopSidebar = (
+    <div className={cn(
+      "hidden lg:flex h-full flex-col bg-white border-r border-gray-100 transition-all duration-300 ease-in-out",
+      collapsed ? 'w-20' : 'w-80'
+    )} style={sidebarFont}>
+      {/* Header */}
+      <div className={cn(
+        "flex h-16 items-center px-6 border-b border-gray-100",
+        collapsed ? 'justify-center px-2' : 'gap-3'
+      )} style={sidebarHeadingFont}>
+        {!collapsed ? (
+          <>
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                <Building2 className="h-5 w-5 text-blue-600" />
+              </div>
+              <div className="flex flex-col">
+                <span style={sidebarHeadingFont}>LCMS</span>
+                <span className="text-xs text-gray-500" style={sidebarFont}>Admin Panel</span>
+              </div>
+            </div>
+            <button
+              onClick={toggleCollapsed}
+              className="ml-auto p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+              aria-label="Collapse sidebar"
+            >
+              <PanelRightClose className="w-4 h-4" />
             </button>
           </>
-        )}
-        {collapsed && (
+        ) : (
           <button
-            type="button"
             onClick={toggleCollapsed}
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            aria-expanded={!collapsed}
-            className="text-gray-500 hover:text-gray-700 p-2 rounded transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+            aria-label="Expand sidebar"
           >
-            <PanelRightOpen className="w-5 h-5" />
+            <PanelRightOpen className="w-4 h-4" />
           </button>
         )}
       </div>
 
-      <div className="flex-1 px-4 py-6 overflow-y-auto transition-all duration-300">
-        {/* User info: hidden entirely when collapsed */}
-        {!collapsed && (
-          <p className='text-gray-600 mb-6'>
-            Welcome back,<br/>
-            <span className='font-semibold text-gray-900'>
-              {formatUserDisplay(user)}
-            </span><br/>
-            <span className='capitalize text-blue-600'>
-              {user.department ? ` ${user.department}` : ''}
-            </span>
-          </p>
-        )}
-        <nav className="space-y-2">
-          {filteredNavItems.map((item) => {
-            const Icon = item.icon;
-            let href = item.href;
-            if (item.title === 'Dashboard') {
-              const roleRoot = {
-                superadmin: '/superadmin',
-                admin: '/admin',
-                lecturer: '/lecturer',
-                management: '/management'
-              }[user.role] || '/dashboard';
-              href = roleRoot;
-            }
-            const active = isActive(href, item.title);
-            return (
-              <Link key={item.title} to={href} className="block group">
-                <Button
-                  variant={active ? "primary" : "outline"}
-                  className={cn(
-                    "w-full transition-colors flex items-center gap-3 px-4 py-2 text-sm font-medium overflow-hidden",
-                    collapsed ? 'justify-center px-3 gap-0' : 'justify-start',
-                    active ? "bg-blue-600 text-white hover:bg-blue-600" : "text-gray-700 hover:bg-gray-100"
-                  )}
-                  title={collapsed ? item.title : undefined}
-                >
-                  <span className="w-5 flex justify-center">
-                    <Icon className={cn("h-4 w-4", active ? "text-white" : "text-gray-600 group-hover:text-gray-900")} />
+      {/* Content */}
+      <div className="flex-1 overflow-hidden">
+        <div className="h-full overflow-y-auto px-4 py-6">
+          {/* User Profile */}
+          {!collapsed && (
+            <div className="mb-6 p-3 bg-gray-50 rounded-xl border border-gray-100" style={sidebarFont}>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <span className="text-blue-600 font-medium text-sm" style={sidebarHeadingFont}>
+                    {user?.email?.charAt(0).toUpperCase()}
                   </span>
-                  {!collapsed && (
-                    <span className={cn(
-                      active ? "text-white" : "text-gray-700 group-hover:text-gray-900",
-                      "transition-opacity duration-200 flex-1 text-left whitespace-nowrap"
-                    )}>{item.title}</span>
-                  )}
-                </Button>
-              </Link>
-            );
-          })}
-        </nav>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-gray-900 truncate text-sm" style={sidebarHeadingFont}>
+                    {formatUserDisplay(user)}
+                  </p>
+                  <p className="text-xs text-gray-500" style={sidebarFont}>
+                    {getUserRoleLabel(user.role)}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Navigation */}
+          <nav className="space-y-1" style={sidebarFont}>
+            {filteredNavItems.map((item) => renderNavItem(item))}
+          </nav>
+        </div>
       </div>
 
-      <div className={`p-4 border-t border-gray-200 transition-all duration-300 ${collapsed ? 'px-2' : ''}`}>
-        <Button
-          variant="outline"
-          className={cn(
-            "w-full text-red-600 hover:text-red-700 hover:bg-red-50 flex items-center", 
-            collapsed ? 'justify-center px-2' : 'justify-start'
-          )}
+      {/* Footer */}
+      <div className="flex-shrink-0 p-4 border-t border-gray-100">
+        <button
           onClick={logout}
+          className={cn(
+            "w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200",
+            "text-gray-700 hover:text-red-600 hover:bg-red-50",
+            collapsed ? 'justify-center px-3' : 'justify-start'
+          )}
+          style={sidebarFont}
           title={collapsed ? 'Sign Out' : undefined}
         >
           <LogOut className="h-4 w-4" />
-          {!collapsed && <span className="ml-3">Sign Out</span>}
-        </Button>
+          {!collapsed && <span>Sign Out</span>}
+        </button>
       </div>
     </div>
   );
 
-  // Mobile overlay sidebar (visible when mobileOpen is true)
+  // Mobile sidebar
   const mobileSidebar = (
     <>
       {/* Backdrop */}
-      <div className={`fixed inset-0 bg-black/40 z-40 transition-opacity ${mobileOpen ? 'opacity-100 block' : 'opacity-0 pointer-events-none hidden'}`} onClick={onClose} aria-hidden />
-      <div className={`fixed inset-y-0 left-0 z-50 w-64 transform bg-white border-r border-gray-200 transition-transform duration-300 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`} role="dialog" aria-modal={mobileOpen}>
-        <div className="flex h-16 items-center px-4 border-b border-gray-200">
-          <div className="flex items-center gap-2">
-            <Building2 className="h-8 w-8 text-blue-600 flex-shrink-0" />
-            <span className="text-lg font-semibold text-gray-900">LCMS</span>
+      <div 
+        className={cn(
+          "fixed inset-0 bg-black/20 z-40 lg:hidden transition-opacity duration-300",
+          mobileOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        )} 
+        onClick={onClose} 
+      />
+      {/* Sidebar */}
+      <div className={cn(
+        "fixed inset-y-0 left-0 z-50 w-80 bg-white shadow-xl lg:hidden transition-transform duration-300",
+        mobileOpen ? 'translate-x-0' : '-translate-x-full'
+      )} style={sidebarFont}>
+        {/* Mobile Header */}
+        <div className="flex h-16 items-center px-6 border-b border-gray-100" style={sidebarHeadingFont}>
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+              <Building2 className="h-5 w-5 text-blue-600" />
+            </div>
+            <div className="flex flex-col">
+              <span style={sidebarHeadingFont}>LCMS</span>
+              <span className="text-xs text-gray-500" style={sidebarFont}>Admin Panel</span>
+            </div>
           </div>
           <button 
             onClick={onClose} 
-            className="ml-auto p-2 rounded text-gray-600 hover:text-gray-800 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-            aria-label="Close sidebar"
+            className="ml-auto p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
           >
-            <X className="h-5 w-5" />
+            <X className="h-4 w-4" />
           </button>
         </div>
+        {/* Mobile Content */}
         <div className="flex flex-col h-[calc(100vh-4rem)]">
-          <div className="flex-1 px-4 py-6 overflow-y-auto">
-            <p className='text-gray-600 mb-6'>
-              Welcome back,<br/>
-              <span className='font-semibold text-gray-900'>
-                {formatUserDisplay(user)}
-              </span><br/>
-              <span className='capitalize text-blue-600'>
-                {user.department ? ` ${user.department}` : ''}
-              </span>
-            </p>
-            <nav className="space-y-2">
-              {filteredNavItems.map((item) => {
-                const Icon = item.icon;
-                let href = item.href;
-                if (item.title === 'Dashboard') {
-                  const roleRoot = {
-                    superadmin: '/superadmin',
-                    admin: '/admin',
-                    lecturer: '/lecturer',
-                    management: '/management'
-                  }[user.role] || '/dashboard';
-                  href = roleRoot;
-                }
-                const active = isActive(href, item.title);
-                return (
-                  <Link key={item.title} to={href} className="block" onClick={onClose}>
-                    <Button
-                      variant={active ? "primary" : "outline"}
-                      className={cn(
-                        "w-full transition-colors flex items-center gap-3 px-4 py-2 text-sm font-medium overflow-hidden justify-start",
-                        active ? "bg-blue-600 text-white hover:bg-blue-600" : "text-gray-700 hover:bg-gray-100"
-                      )}
-                    >
-                      <span className="w-5 flex justify-center">
-                        <Icon className={cn("h-4 w-4", active ? "text-white" : "text-gray-600 group-hover:text-gray-900")} />
-                      </span>
-                      <span className={cn(
-                        active ? "text-white" : "text-gray-700 group-hover:text-gray-900",
-                        "transition-opacity duration-200 flex-1 text-left whitespace-nowrap"
-                      )}>{item.title}</span>
-                    </Button>
-                  </Link>
-                );
-              })}
+          <div className="flex-1 overflow-y-auto px-4 py-6">
+            {/* Mobile User Profile */}
+            <div className="mb-6 p-3 bg-gray-50 rounded-xl border border-gray-100" style={sidebarFont}>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <span className="text-blue-600 font-medium text-sm" style={sidebarHeadingFont}>
+                    {user?.email?.charAt(0).toUpperCase()}
+                  </span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-gray-900 truncate text-sm" style={sidebarHeadingFont}>
+                    {formatUserDisplay(user)}
+                  </p>
+                  <p className="text-xs text-gray-500" style={sidebarFont}>
+                    {getUserRoleLabel(user.role)}
+                  </p>
+                </div>
+              </div>
+            </div>
+            {/* Mobile Navigation */}
+            <nav className="space-y-1" style={sidebarFont}>
+              {filteredNavItems.map((item) => renderNavItem(item, true))}
             </nav>
           </div>
-          <div className="flex-shrink-0 p-4 border-t border-gray-200">
-            <Button variant="outline" className="w-full text-red-600 hover:text-red-700 hover:bg-red-50 flex items-center" onClick={() => { onClose(); logout(); }}>
+          {/* Mobile Footer */}
+          <div className="flex-shrink-0 p-4 border-t border-gray-100">
+            <button 
+              onClick={() => { onClose(); logout(); }}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-all duration-200 text-gray-700 hover:text-red-600 hover:bg-red-50"
+              style={sidebarFont}
+            >
               <LogOut className="h-4 w-4" />
-              <span className="ml-3">Sign Out</span>
-            </Button>
+              <span>Sign Out</span>
+            </button>
           </div>
         </div>
       </div>
@@ -373,5 +517,3 @@ export function Sidebar({ user: userProp, onLogout, mobileOpen = false, onClose 
     </>
   );
 }
-
-// Course Mapping page link already added earlier; ensure route exists in router configuration.
