@@ -616,7 +616,7 @@ export default function Recruitment() {
                   <CardContent className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <label className="block text-sm font-medium text-gray-700">Full Name*</label>
+                        <label className="block text-sm font-medium text-gray-700">Full Name <span className="text-red-500" aria-hidden="true">*</span></label>
                         <Input
                           required
                           value={newCandidate.fullName}
@@ -641,7 +641,7 @@ export default function Recruitment() {
                         )}
                       </div>
                       <div className="space-y-2">
-                        <label className="block text-sm font-medium text-gray-700">Email*</label>
+                        <label className="block text-sm font-medium text-gray-700">Email <span className="text-red-500" aria-hidden="true">*</span></label>
                         <Input
                           required
                           type="email"
@@ -652,7 +652,7 @@ export default function Recruitment() {
                         />
                       </div>
                       <div className="space-y-2">
-                        <label className="block text-sm font-medium text-gray-700">Phone*</label>
+                        <label className="block text-sm font-medium text-gray-700">Phone <span className="text-red-500" aria-hidden="true">*</span></label>
                         <PhoneInput
                           country={'kh'}
                           value={(newCandidate.phone || '').replace(/^\+/, '')}
@@ -692,7 +692,7 @@ export default function Recruitment() {
                         )}
                       </div>
                       <div className="space-y-2">
-                        <label className="block text-sm font-medium text-gray-700">Position Applied For*</label>
+                        <label className="block text-sm font-medium text-gray-700">Position Applied For <span className="text-red-500" aria-hidden="true">*</span></label>
                         <Select value={newCandidate.positionAppliedFor} onValueChange={(value) => setNewCandidate({ ...newCandidate, positionAppliedFor: value })} placeholder="Select position">
                           <SelectItem value="Lecturer">Lecturer</SelectItem>
                           <SelectItem value="Assistant Lecturer">Assistant Lecturer</SelectItem>
@@ -705,7 +705,7 @@ export default function Recruitment() {
                         )}
                       </div>
                       <div className="space-y-2 md:col-span-2">
-                        <label className="block text-sm font-medium text-gray-700">Interview Date & Time*</label>
+                        <label className="block text-sm font-medium text-gray-700">Interview Date & Time <span className="text-red-500" aria-hidden="true">*</span></label>
                         <LocalizationProvider dateAdapter={AdapterDayjs}>
                           <DateTimePicker
                             label="Interview Date & Time"

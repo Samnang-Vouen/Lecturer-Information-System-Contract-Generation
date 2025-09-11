@@ -62,11 +62,11 @@ export default function ClassFormDialog({ open, onOpenChange, onSubmit, classDat
         >
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1">
-              <Label htmlFor="name" className="text-sm font-medium text-gray-700">Class Name</Label>
+              <Label htmlFor="name" className="text-sm font-medium text-gray-700">Class Name <span className="text-red-500" aria-hidden="true">*</span></Label>
               <Input id="name" className="focus:ring-blue-500" placeholder="Gen10" value={classData.name} onChange={e => setClassData({ ...classData, name: e.target.value })} />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="term" className="text-sm font-medium text-gray-700">Term</Label>
+              <Label htmlFor="term" className="text-sm font-medium text-gray-700">Term <span className="text-red-500" aria-hidden="true">*</span></Label>
               <Select
                 value={classData.term}
                 onValueChange={value => setClassData({ ...classData, term: value })}
@@ -78,7 +78,7 @@ export default function ClassFormDialog({ open, onOpenChange, onSubmit, classDat
               </Select>
             </div>
             <div className="space-y-1">
-              <Label htmlFor="year_level" className="text-sm font-medium text-gray-700">Year Level</Label>
+              <Label htmlFor="year_level" className="text-sm font-medium text-gray-700">Year Level <span className="text-red-500" aria-hidden="true">*</span></Label>
               <Select
                 value={classData.year_level}
                 onValueChange={value => setClassData({ ...classData, year_level: value })}
@@ -91,7 +91,7 @@ export default function ClassFormDialog({ open, onOpenChange, onSubmit, classDat
               </Select>
             </div>
             <div className="space-y-1">
-              <Label htmlFor="academic_year" className="text-sm font-medium text-gray-700">Academic Year</Label>
+              <Label htmlFor="academic_year" className="text-sm font-medium text-gray-700">Academic Year <span className="text-red-500" aria-hidden="true">*</span></Label>
               <Select
                 value={classData.academic_year}
                 onValueChange={(value) => setClassData({ ...classData, academic_year: value })}
@@ -103,7 +103,7 @@ export default function ClassFormDialog({ open, onOpenChange, onSubmit, classDat
               </Select>
             </div>
             <div className="space-y-1">
-              <Label htmlFor="total_class" className="text-sm font-medium text-gray-700">Total Groups</Label>
+              <Label htmlFor="total_class" className="text-sm font-medium text-gray-700">Total Groups <span className="text-red-500" aria-hidden="true">*</span></Label>
               <Input
                 id="total_class"
                 type="number"
@@ -132,7 +132,7 @@ export default function ClassFormDialog({ open, onOpenChange, onSubmit, classDat
                   title="Assign Courses"
                 >
                   <BookOpen className="h-4 w-4" />
-                  <span className="ml-2 text-sm font-medium">Assign Courses</span>
+                  <span className="ml-2 text-sm font-medium">Assign Courses <span className="text-red-500" aria-hidden="true">*</span></span>
                 </Button>
                 {/* Selected courses preview */}
                 <div className="pt-2">
