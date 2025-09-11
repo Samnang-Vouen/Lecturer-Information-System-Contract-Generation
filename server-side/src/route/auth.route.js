@@ -11,7 +11,7 @@ router.post('/login', login);
 router.post('/logout', logout);
 
 // Check authentication status - protected
-router.get('/check', protect, checkAuth);
+router.get('/check'/* , protect */, checkAuth);
 
 // Change superadmin password - protected superadmin-only
 router.post('/change-password', protect, authorizeRoles('superadmin')/* , changeSuperadminPassword */);

@@ -1,5 +1,31 @@
 import ClassModel from '../model/class.model.js';
+import Course from '../model/course.model.js';
 import { Department } from '../model/index.js';
+
+// Helper to enrich a Class instance with totals derived from associated courses
+async function enrichWithTotals(classInstance) {
+  try {
+    const obj = classInstance.toJSON();
+    const codes = Array.isArray(obj.courses) ? obj.courses : [];
+    const total_courses_count = codes.length;
+    let total_hours = 0;
+    let total_credits = 0;
+    if (codes.length) {
+      const where = { course_code: codes };
+      if (obj.dept_id) where.dept_id = obj.dept_id;
+      const courseRows = await Course.findAll({ where, attributes: ['course_code','hours','credits','dept_id'] });
+      for (const c of courseRows) {
+        total_hours += Number.isFinite(+c.hours) ? +c.hours : 0;
+        total_credits += Number.isFinite(+c.credits) ? +c.credits : 0;
+      }
+    }
+    return { ...obj, total_courses_count, total_hours, total_credits };
+  } catch {
+    // On any error, fall back to base JSON without totals
+    const obj = classInstance.toJSON();
+    return { ...obj, total_courses_count: Array.isArray(obj.courses) ? obj.courses.length : 0, total_hours: 0, total_credits: 0 };
+  }
+}
 
 const ClassController = {
   async getAllClasses(req, res) {
@@ -20,10 +46,11 @@ const ClassController = {
       const offset = (page - 1) * limit;
 
       const { rows, count } = await ClassModel.findAndCountAll({ where, order: [['created_at', 'DESC']], limit, offset });
+      const enrichedRows = await Promise.all(rows.map(enrichWithTotals));
       const totalPages = Math.ceil(count / limit) || 1;
       const hasMore = page < totalPages;
       res.json({
-        data: rows,
+        data: enrichedRows,
         page,
         limit,
         total: count,
@@ -37,13 +64,14 @@ const ClassController = {
   },
   async getClassById(req, res) {
     try {
-      const classItem = await ClassModel.findByPk(req.params.id);
+  const classItem = await ClassModel.findByPk(req.params.id);
       if (!classItem) return res.status(404).json({ error: 'Class not found.' });
       if (req.user?.role === 'admin' && req.user.department_name) {
         const dept = await Department.findOne({ where: { dept_name: req.user.department_name } });
         if (dept && classItem.dept_id !== dept.id) return res.status(403).json({ error: 'Access denied: different department' });
       }
-      res.json(classItem);
+  const enriched = await enrichWithTotals(classItem);
+  res.json(enriched);
     } catch (err) {
       res.status(500).json({ error: 'Failed to fetch class.' });
     }
@@ -64,7 +92,7 @@ const ClassController = {
         const dept = await Department.findOrCreate({ where: { dept_name: req.user.department_name }, defaults: { dept_name: req.user.department_name } });
         deptId = dept[0].id;
       }
-      const newClass = await ClassModel.create({
+  const newClass = await ClassModel.create({
         name: payload.name,
         term: payload.term,
         year_level: payload.year_level,
@@ -73,7 +101,8 @@ const ClassController = {
         dept_id: deptId,
         courses
       });
-      res.status(201).json(newClass);
+  const enriched = await enrichWithTotals(newClass);
+  res.status(201).json(enriched);
     } catch (err) {
   console.error('Create class error:', err?.message, err?.stack, '\nOriginal:', err?.original?.sqlMessage);
       res.status(500).json({ error: 'Failed to create class.', details: err?.message });
@@ -91,8 +120,9 @@ const ClassController = {
         const parsed = Number.parseInt(req.body.total_class, 10);
         req.body.total_class = Number.isFinite(parsed) && parsed > 0 ? parsed : classItem.total_class;
       }
-      await classItem.update(req.body);
-      res.json(classItem);
+  await classItem.update(req.body);
+  const enriched = await enrichWithTotals(classItem);
+  res.json(enriched);
     } catch (err) {
   console.error('Update class error:', err?.message, err?.stack, '\nOriginal:', err?.original?.sqlMessage);
   res.status(500).json({ error: 'Failed to update class.', details: err?.original?.sqlMessage || err?.message });
@@ -122,7 +152,10 @@ const ClassController = {
       }
   const courses = Array.isArray(req.body.courses) ? req.body.courses : [];
   await classItem.update({ courses });
-      res.json(classItem);
+      {
+        const enriched = await enrichWithTotals(classItem);
+        res.json(enriched);
+      }
     } catch (err) {
       res.status(500).json({ error: 'Failed to assign courses.' });
     }

@@ -108,6 +108,19 @@ const navItems = [
     roles: ["lecturer"],
     category: null
   },
+  // Management minimal menu
+  {
+    title: "My Profile",
+    href: "/management/profile",
+    icon: UserCheck,
+    roles: ["management"],
+  },
+  {
+    title: "Contract Management",
+    href: "/management/contracts",
+    icon: FileText,
+    roles: ["management"],
+  },
 ];
 
 export function Sidebar({ user: userProp, onLogout, mobileOpen = false, onClose = () => {} }) {

@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { ChevronDown } from 'lucide-react';
 
-export default function Select({ children, value, onValueChange, placeholder }) {
+// Added className hooks to allow sizing and minor style overrides from callers
+export default function Select({ children, value, onValueChange, placeholder, className = '', buttonClassName = '', dropdownClassName = '' }) {
     const [isOpen, setIsOpen] = useState(false);
     const [selectedValue, setSelectedValue] = useState(value || '');
     const containerRef = useRef(null);
@@ -39,10 +40,10 @@ export default function Select({ children, value, onValueChange, placeholder }) 
     };
 
     return (
-        <div className="relative" ref={containerRef}>
+        <div className={`relative ${className}`} ref={containerRef}>
             <button
                 type="button"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-left focus:outline-none focus:ring-2 focus:ring-blue-500 flex items-center justify-between"
+                className={`w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-left focus:outline-none focus:ring-2 focus:ring-blue-500 flex items-center justify-between ${buttonClassName}`}
                 onClick={() => setIsOpen(!isOpen)}
             >
                 <span className={selectedValue ? 'text-gray-900' : 'text-gray-500'}>
@@ -51,7 +52,7 @@ export default function Select({ children, value, onValueChange, placeholder }) 
                 <ChevronDown className="w-4 h-4 text-gray-500" />
             </button>
             {isOpen && (
-                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-auto">
+                <div className={`absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-auto ${dropdownClassName}`}>
                     {React.Children.map(children, (child) => React.cloneElement(child, { onSelect: handleSelect }))}
                 </div>
             )}
@@ -59,11 +60,11 @@ export default function Select({ children, value, onValueChange, placeholder }) 
     );
 }
 
-export function SelectItem({ value, children, onSelect }) {
+export function SelectItem({ value, children, onSelect, className = '' }) {
     return (
         <button
             type="button"
-            className="w-full px-3 py-2 text-left hover:bg-gray-100 focus:bg-gray-100 focus:outline-none"
+            className={`w-full px-3 py-2 text-left hover:bg-gray-100 focus:bg-gray-100 focus:outline-none ${className}`}
             onClick={() => onSelect(value)}
         >
             {children}

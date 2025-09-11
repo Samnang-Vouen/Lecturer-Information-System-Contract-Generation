@@ -270,8 +270,13 @@ export default function ClassesManagement() {
 
   // Assign courses
   const handleAssignCourses = (classItem) => {
-    setAssigningClass(classItem);
-    setSelectedCourses(Array.isArray(classItem.courses) ? classItem.courses : []);
+    // If classItem has no id, treat as new-class assignment
+    const isNew = !classItem || !classItem.id;
+    const target = isNew
+      ? { id: null, name: newClass?.name || 'New Class', courses: Array.isArray(selectedCourses) ? selectedCourses : [] }
+      : classItem;
+    setAssigningClass(target);
+    setSelectedCourses(Array.isArray(target.courses) ? target.courses : []);
     axios.get('/courses')
       .then(res => {
         const payload = res.data;
@@ -287,6 +292,12 @@ export default function ClassesManagement() {
 
   // Save course assignment
   const handleSaveCourseAssignment = () => {
+    // If assigningClass has no id, we're in Add flow: just store selectedCourses and close dialog
+    if (!assigningClass || !assigningClass.id) {
+      setIsCourseAssignDialogOpen(false);
+      setAssigningClass(null);
+      return;
+    }
     setLoading(true);
     axios.put(`/classes/${assigningClass.id}/courses`, { courses: selectedCourses })
       .then(() => {

@@ -1,9 +1,13 @@
 import React from 'react';
+import DashboardLayout from '../components/DashboardLayout';
+import { Outlet } from 'react-router-dom';
+import { useAuthStore } from '../store/useAuthStore';
 
-export default function ManagementDashboard() {
+export default function ManagementDashboardLayout() {
+  const { authUser, logout, isCheckingAuth } = useAuthStore();
   return (
-    <div>
-      Management Dashboard
-    </div>
+    <DashboardLayout user={authUser} isLoading={isCheckingAuth} logout={logout}>
+      <Outlet />
+    </DashboardLayout>
   );
 }

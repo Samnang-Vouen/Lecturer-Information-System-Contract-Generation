@@ -97,9 +97,12 @@ export default function UserManagement() {
     useEffect(()=>{ setPage(1); }, [searchQuery, selectedRole, selectedDepartment]);
     useEffect(()=>{}, [totalPages]);
 
-    // Server already applies filtering & pagination, but keep aliases for clarity/UI conditions
-    const filteredUsers = users; // alias used in render conditions
-    const paginatedUsers = users; // alias used for mapping rows
+    // Ensure only results matching the entered text are displayed while searching (hide unrelated rows)
+    const q = (searchQuery || '').trim().toLowerCase();
+    const filteredUsers = q
+        ? users.filter(u => (u.name || '').toLowerCase().startsWith(q) || (u.email || '').toLowerCase().startsWith(q))
+        : users;
+    const paginatedUsers = filteredUsers; // render-only list
 
     const getRoleBadgeVariant = (role) => {
         const r = (role || '').toString().trim().toLowerCase();
@@ -381,7 +384,6 @@ export default function UserManagement() {
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
                         <Select value={editForm.role} onValueChange={(v)=>setEditForm(f=>({...f, role: v}))} placeholder="Select role">
-                        <SelectItem value="superadmin">Super Admin</SelectItem>
                         <SelectItem value="admin">Admin</SelectItem>
                         <SelectItem value="management">Management</SelectItem>
                         </Select>

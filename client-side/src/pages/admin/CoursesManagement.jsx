@@ -9,12 +9,13 @@ import Input from '../../components/ui/Input.jsx';
 import Textarea from '../../components/ui/Textarea.jsx';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../../components/ui/Card.jsx';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../../components/ui/Table.jsx';
-import Badge from '../../components/ui/Badge.jsx';
 
 export default function CoursesPage(){
   const { authUser: _authUser } = useAuthStore();
   const [courses,setCourses] = useState([]);
   const [search,setSearch] = useState('');
+  const [sortBy,setSortBy] = useState('code'); // 'code' | 'name'
+  const [hoursFilter,setHoursFilter] = useState(''); // '', '15', '30', '45', '90' or CSV like '15,30'
   const [loading,setLoading] = useState(false);
   const [creating,setCreating] = useState(false);
   const [updating,setUpdating] = useState(false);
@@ -28,12 +29,20 @@ export default function CoursesPage(){
   const [viewType,setViewType] = useState('table'); // 'table' or 'grid'
   const emptyCourse = { course_code:'', course_name:'', description:'', hours:'', credits:'' };
   const [form,setForm] = useState(emptyCourse);
+  const [formErrors, setFormErrors] = useState({ course_code: '', course_name: '' });
   const [editId,setEditId] = useState(null);
   const [page,setPage] = useState(1);
   const [hasMore,setHasMore] = useState(true);
   const limit = 10;
   const loadingRef = useRef(false);
   const sentinelRef = useRef(null);
+
+  // Derive credits from hours: every 15 hours = 1 credit
+  const creditsFromHours = (hours) => {
+    const n = typeof hours === 'string' ? parseInt(hours, 10) : hours;
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return n % 15 === 0 ? n / 15 : null;
+  };
 
   const load = useCallback(async (reset=false)=>{
     if(loadingRef.current) return;
@@ -43,7 +52,12 @@ export default function CoursesPage(){
     setLoading(true);
     try {
       const targetPage = reset? 1 : page;
-      const res = await axiosInstance.get(`/courses?page=${targetPage}&limit=${limit}`);
+      const params = new URLSearchParams();
+      params.set('page', String(targetPage));
+      params.set('limit', String(limit));
+      if(sortBy) params.set('sortBy', sortBy);
+      if(hoursFilter) params.set('hours', hoursFilter);
+      const res = await axiosInstance.get(`/courses?${params.toString()}`);
       const payload = res.data;
       if(Array.isArray(payload)){
         setCourses(payload);
@@ -58,7 +72,7 @@ export default function CoursesPage(){
       setLoading(false);
       loadingRef.current = false;
     }
-  },[page,limit]);
+  },[page,limit,sortBy,hoursFilter]);
 
   useEffect(()=>{ load(true); },[]);
 
@@ -79,17 +93,20 @@ export default function CoursesPage(){
 
   useEffect(()=>{ if(page>1) load(); },[page]);
 
-  const openAdd=()=>{ setForm(emptyCourse); setAddOpen(true); };
+  const openAdd=()=>{ setForm(emptyCourse); setFormErrors({ course_code: '', course_name: '' }); setAddOpen(true); };
   const submitAdd=async()=>{
     if(!form.course_code || !form.course_name){ toast.error('Course code and name are required'); return; }
     setCreating(true);
     try {
-      const payload = { ...form, hours: form.hours? Number(form.hours): null, credits: form.credits? Number(form.credits): null };
+  const hoursVal = form.hours ? Number(form.hours) : null;
+  const derivedCredits = hoursVal ? creditsFromHours(hoursVal) : null;
+  const payload = { ...form, hours: hoursVal, credits: derivedCredits ?? null };
       const res = await axiosInstance.post('/courses', payload);
       setCourses(prev=>[res.data.course, ...prev]);
       toast.success('Course added successfully');
       setAddOpen(false);
       setForm(emptyCourse);
+      setFormErrors({ course_code: '', course_name: '' });
     } catch(e){
       toast.error(e?.response?.data?.message || 'Failed to add course');
     } finally { setCreating(false); }
@@ -114,7 +131,9 @@ export default function CoursesPage(){
     if(!form.course_code || !form.course_name){ toast.error('Course code and name are required'); return; }
     setUpdating(true);
     try {
-      const payload = { ...form, hours: form.hours? Number(form.hours): null, credits: form.credits? Number(form.credits): null };
+  const hoursVal = form.hours ? Number(form.hours) : null;
+  const derivedCredits = hoursVal ? creditsFromHours(hoursVal) : null;
+  const payload = { ...form, hours: hoursVal, credits: derivedCredits ?? null };
       const res = await axiosInstance.put(`/courses/${editId}`, payload);
       setCourses(prev=> prev.map(c=> c.id===editId ? res.data.course : c));
       toast.success('Course updated successfully');
@@ -137,7 +156,7 @@ export default function CoursesPage(){
 
   const filteredCourses = useMemo(()=>{
     if(!search.trim()) return courses;
-    const term = search.toLowerCase();
+    const term = search.trim().toLowerCase();
     return courses.filter(c =>
       c.course_code?.toLowerCase().includes(term) ||
       c.course_name?.toLowerCase().includes(term) ||

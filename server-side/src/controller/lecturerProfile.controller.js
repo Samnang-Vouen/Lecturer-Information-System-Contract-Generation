@@ -7,6 +7,7 @@ import Course from '../model/course.model.js';
 import LecturerCourse from '../model/lecturerCourse.model.js';
 
 const LECTURER_PROFILE_EDITABLE_FIELDS = [
+  'title','gender',
   'full_name_english','full_name_khmer','personal_email','phone_number','place',
   'latest_degree','degree_year','major','university','country','qualifications','research_fields','short_bio',
   'bank_name','account_name','account_number'
@@ -16,6 +17,8 @@ const toResponse = (p,user, departments = [], courses = [])=>({
   id: p.id,
   user_id: p.user_id,
   employee_id: p.employee_id,
+  title: p.title,
+  gender: p.gender,
   full_name_english: p.full_name_english,
   full_name_khmer: p.full_name_khmer,
   personal_email: p.personal_email,
@@ -95,6 +98,49 @@ export const getMyLecturerProfile = async (req,res)=>{
   return res.json({ ...toResponse(profile,user, departments, lecturerCourses), hourlyRateThisYear });
   } catch (e) {
     console.error('getMyLecturerProfile error', e);
+    return res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// GET /api/lecturer-profile/me/candidate-contact
+// Returns phone and personal email from the Candidate row matched to the logged-in lecturer
+export const getMyCandidateContact = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+    const profile = await LecturerProfile.findOne({ where: { user_id: userId } });
+    const user = await User.findByPk(userId);
+    if (!profile || !user) return res.status(404).json({ message: 'Lecturer profile not found' });
+
+    // Try to find Candidate by normalized full name (without titles), fallback to user email
+    const titleRegex = /^(mr\.?|ms\.?|mrs\.?|dr\.?|prof\.?|professor|miss)\s+/i;
+    const normalizeName = (s = '') => String(s).trim().replace(titleRegex, '').replace(/\s+/g, ' ').trim();
+    const rawName = profile.full_name_english || user.display_name || '';
+    const cleanedLower = normalizeName(rawName).toLowerCase();
+
+    let cand = null;
+    try {
+      if (cleanedLower) {
+        cand = await Candidate.findOne({
+          where: where(fn('LOWER', fn('TRIM', col('fullName'))), cleanedLower)
+        });
+      }
+      if (!cand && user.email) {
+        cand = await Candidate.findOne({ where: { email: user.email } });
+      }
+    } catch (e) {
+      console.warn('[getMyCandidateContact] candidate lookup error:', e.message);
+    }
+
+    if (!cand) return res.status(404).json({ message: 'Candidate not found for this lecturer' });
+
+    return res.json({
+      phone: cand.phone || null,
+      personalEmail: cand.email || null,
+      candidateId: cand.id
+    });
+  } catch (e) {
+    console.error('getMyCandidateContact error', e);
     return res.status(500).json({ message: 'Server error' });
   }
 };

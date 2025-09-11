@@ -13,12 +13,12 @@ const Course = sequelize.define('Course', {
     allowNull: false 
   },
   course_code: { 
-    type: DataTypes.STRING(255), 
-    allowNull: false 
+  type: DataTypes.STRING(255), 
+  allowNull: false
   },
   course_name: { 
-    type: DataTypes.STRING(255), 
-    allowNull: false 
+  type: DataTypes.STRING(255), 
+  allowNull: false
   },
   description: {
     type: DataTypes.TEXT, 
@@ -36,7 +36,12 @@ const Course = sequelize.define('Course', {
   tableName: 'Courses',
   timestamps: true,
   createdAt: 'created_at',
-  updatedAt: 'updated_at'
+    updatedAt: 'updated_at',
+    indexes: [
+      // Composite uniqueness within a department
+      { unique: true, fields: ['dept_id','course_code'], name: 'uniq_courses_dept_code' },
+      { unique: true, fields: ['dept_id','course_name'], name: 'uniq_courses_dept_name' }
+    ]
 });
 
 export default Course;

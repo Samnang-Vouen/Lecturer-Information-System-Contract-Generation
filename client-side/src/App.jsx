@@ -12,7 +12,10 @@ import Onboarding from './pages/lecturer/Onboarding.jsx';
 import LecturerDashboardLayout from './pages/LecturerDashboardLayout.jsx';
 import LecturerProfile from './pages/lecturer/LecturerProfile.jsx';
 import LecturerContracts from './pages/lecturer/LecturerContracts.jsx';
-import ManagementDashboard from './pages/ManagementDashboard.jsx';
+import ManagementDashboardLayout from './pages/ManagementDashboard.jsx';
+import ManagementHome from './pages/management/ManagementHome.jsx';
+import ManagementProfile from './pages/management/ManagementProfile.jsx';
+import ManagementContracts from './pages/management/ManagementContracts.jsx';
 import Recruitment from './pages/admin/Recruitment.jsx';
 import SuperAdminDashboard from './pages/SuperAdminDashboard.jsx';
 import UserManagement from './pages/UserManagement.jsx';
@@ -20,8 +23,9 @@ import LoginForm from './components/LoginForm.jsx';
 import AdminProfile from './pages/admin/AdminProfile.jsx';
 import LecturerManagement from './pages/admin/LecturerManagement.jsx';
 import ClassesManagement from './pages/admin/ClassesManagement.jsx';
-import CoursesPage from './pages/admin/Courses.jsx';
+import CoursesPage from './pages/admin/CoursesManagement.jsx';
 import CourseMappingPage from './pages/admin/CourseMapping.jsx';
+import ContractGeneration from './pages/admin/ContractGeneration.jsx';
 
 
 function App() {
@@ -82,6 +86,7 @@ function App() {
               <Route path="classes" element={<ClassesManagement />} />
             <Route path="courses" element={<CoursesPage />} />
             <Route path="course-mapping" element={<CourseMappingPage />} />
+            <Route path="contracts" element={<ContractGeneration />} />
           </Route>
 
           <Route
@@ -98,14 +103,18 @@ function App() {
           </Route>
           <Route path="/onboarding" element={<Onboarding />} />
 
-            <Route
-              path="/management"
-              element={
-                <RequireRole allowed={["management"]}>
-                  <ManagementDashboard />
-                </RequireRole>
-              }
-            />
+          <Route
+            path="/management"
+            element={
+              <RequireRole allowed={["management"]}>
+                <ManagementDashboardLayout />
+              </RequireRole>
+            }
+          >
+            <Route index element={<ManagementHome />} />
+            <Route path="profile" element={<ManagementProfile />} />
+            <Route path="contracts" element={<ManagementContracts />} />
+          </Route>
 
           {/* Fallback: if authenticated, keep them where they are or send to role home; else go login */}
           <Route path="*" element={authUser ? <Navigate to={`/${authUser.role}`} replace /> : <Navigate to="/login" replace />} />
