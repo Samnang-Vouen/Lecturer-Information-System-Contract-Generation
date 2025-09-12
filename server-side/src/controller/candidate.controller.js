@@ -1,5 +1,6 @@
 import Candidate from '../model/candidate.model.js';
 import { Department } from '../model/index.js';
+import { Op } from 'sequelize';
 
 // GET /api/candidates - list all candidates
 export const getCandidates = async (req, res) => {
@@ -8,15 +9,20 @@ export const getCandidates = async (req, res) => {
     const limit = parseInt(req.query.limit, 10) > 0 ? Math.min(parseInt(req.query.limit, 10), 100) : 10; // cap at 100
     const offset = (page - 1) * limit;
 
-    const where = {};
+  const where = {};
     // Department scoping: admins only see their own department's candidates
     if (req.user?.role === 'admin' && req.user.department_name) {
       const dept = await Department.findOne({ where: { dept_name: req.user.department_name } });
       if (dept) where.dept_id = dept.id; else where.dept_id = -1; // no results fallback
     }
 
+    // Optional filter by status (e.g., accepted) and search by name/email
+    const status = (req.query.status || '').trim();
+    if (status) where.status = status;
+    const search = (req.query.search || '').trim();
+
     const { rows, count } = await Candidate.findAndCountAll({
-      where,
+      where: search ? { ...where, [Op.or]: [ { fullName: { [Op.like]: `%${search}%` } }, { email: { [Op.like]: `%${search}%` } } ] } : where,
       order: [['created_at', 'DESC']],
       limit,
       offset,

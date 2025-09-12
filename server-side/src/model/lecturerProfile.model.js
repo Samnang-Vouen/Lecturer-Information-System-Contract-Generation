@@ -8,7 +8,7 @@ const LecturerProfile = sequelize.define('LecturerProfile', {
     autoIncrement: true
   },
   user_id: {
-    type: DataTypes.INTEGER,
+    type: DataTypes.INTEGER.UNSIGNED,
     allowNull: false,
     references: {
       model: 'users',
@@ -19,6 +19,15 @@ const LecturerProfile = sequelize.define('LecturerProfile', {
   employee_id: {
     type: DataTypes.STRING(255),
     allowNull: false
+  },
+  // New fields for title and gender
+  title: {
+    type: DataTypes.ENUM('Mr', 'Ms', 'Mrs', 'Dr', 'Prof'),
+    allowNull: true
+  },
+  gender: {
+    type: DataTypes.ENUM('male', 'female', 'other'),
+    allowNull: true
   },
   full_name_english: {
     type: DataTypes.STRING(255),

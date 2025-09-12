@@ -1,5 +1,6 @@
 import { Department } from '../model/index.js';
 import Course from '../model/course.model.js';
+import { Op, UniqueConstraintError } from 'sequelize';
 
 function validateCourse(body){
   const errors = [];
@@ -38,7 +39,25 @@ export const listCourses = async (req,res)=>{
     if(limit > 50) limit = 50;
     const offset = (page - 1) * limit;
 
-    const { rows, count } = await Course.findAndCountAll({ where, order: [['course_code','ASC']], limit, offset });
+    // Sorting: default by course_code ASC, allow sortBy=name to sort by course_name ASC
+    const sortBy = String(req.query.sortBy || 'code').toLowerCase();
+    const orderField = sortBy === 'name' ? 'course_name' : 'course_code';
+
+    // Filtering: optional filter by exact hours value(s), accepts single value or comma-separated list
+    const hoursParam = req.query.hours;
+    if(hoursParam !== undefined && hoursParam !== null && String(hoursParam).trim() !== ''){
+      const list = String(hoursParam)
+        .split(',')
+        .map(s=> parseInt(s,10))
+        .filter(n=> Number.isFinite(n));
+      if(list.length === 1){
+        where.hours = list[0];
+      } else if(list.length > 1){
+        where.hours = { [Op.in]: list };
+      }
+    }
+
+    const { rows, count } = await Course.findAndCountAll({ where, order: [[orderField,'ASC']], limit, offset });
     const totalPages = Math.ceil(count / limit) || 1;
     const hasMore = page < totalPages;
     return res.json({
@@ -85,19 +104,29 @@ export const createCourse = async (req,res)=>{
       deptId = dept.id;
     }
 
-    const existing = await Course.findOne({ where: { course_code: req.body.course_code, dept_id: deptId } });
-    if(existing) return res.status(409).json({ message: 'Course code already exists in department' });
+  const code = req.body.course_code.trim();
+  const name = req.body.course_name.trim();
+  // Department-scoped duplicate checks (also enforced by DB composite unique indexes)
+  const existingCode = await Course.findOne({ where: { course_code: code, dept_id: deptId } });
+  if(existingCode) return res.status(409).json({ message: 'Course code already exists in your department' });
+  const existingName = await Course.findOne({ where: { course_name: name, dept_id: deptId } });
+  if(existingName) return res.status(409).json({ message: 'Course name already exists in your department' });
 
     const created = await Course.create({
       dept_id: deptId,
-      course_code: req.body.course_code.trim(),
-      course_name: req.body.course_name.trim(),
+      course_code: code,
+      course_name: name,
       description: req.body.description || null,
       hours: req.body.hours || null,
       credits: req.body.credits || null
     });
   return res.status(201).json({ message: 'Course created', course: created });
   } catch (e){
+    if (e instanceof UniqueConstraintError) {
+      const field = e?.errors?.[0]?.path || 'unique field';
+      const msg = field?.includes('course_code') ? 'Course code already exists in your department' : field?.includes('course_name') ? 'Course name already exists in your department' : 'Duplicate value in your department';
+      return res.status(409).json({ message: msg });
+    }
     console.error('createCourse error', e);
     return res.status(500).json({ message: 'Failed to create course' });
   }
@@ -113,7 +142,28 @@ export const updateCourse = async (req,res)=>{
       if(req.body[f] !== undefined) payload[f] = req.body[f];
     });
     if(Object.keys(payload).length===0) return res.status(400).json({ message: 'No fields to update' });
-    await course.update(payload);
+    // Normalize inputs
+    if(payload.course_code) payload.course_code = String(payload.course_code).trim();
+    if(payload.course_name) payload.course_name = String(payload.course_name).trim();
+    // Duplicate checks for updates
+    if(payload.course_code){
+      const existsCode = await Course.findOne({ where: { course_code: payload.course_code, dept_id: course.dept_id, id: { [Op.ne]: id } } });
+      if(existsCode) return res.status(409).json({ message: 'Course code already exists in your department' });
+    }
+    if(payload.course_name){
+      const existsName = await Course.findOne({ where: { course_name: payload.course_name, dept_id: course.dept_id, id: { [Op.ne]: id } } });
+      if(existsName) return res.status(409).json({ message: 'Course name already exists in your department' });
+    }
+    try {
+      await course.update(payload);
+    } catch (e) {
+      if (e instanceof UniqueConstraintError) {
+        const field = e?.errors?.[0]?.path || 'unique field';
+        const msg = field?.includes('course_code') ? 'Course code already exists in your department' : field?.includes('course_name') ? 'Course name already exists in your department' : 'Duplicate value in your department';
+        return res.status(409).json({ message: msg });
+      }
+      throw e;
+    }
     return res.json({ message: 'Course updated', course });
   } catch (e){
     console.error('updateCourse error', e);

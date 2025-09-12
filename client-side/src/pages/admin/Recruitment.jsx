@@ -6,7 +6,7 @@ import { isValidPhoneNumber } from 'libphonenumber-js';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
-import { Plus, Star, MessageCircle, DollarSign, CheckCircle, XCircle, User, GraduationCap, Clock, AlertCircle, Edit2, Trash2, ChevronDown, Search, Eye } from 'lucide-react';
+import { Plus, Star, MessageCircle, DollarSign, CheckCircle, XCircle, User, GraduationCap, CircleCheck, AlertCircle, Edit2, Trash2, ChevronDown, Search, Eye } from 'lucide-react';
 import Button from '../../components/ui/Button.jsx';
 import Input from '../../components/ui/Input.jsx';
 import Textarea from '../../components/ui/Textarea.jsx';
@@ -49,6 +49,8 @@ export default function Recruitment() {
   const [editQuestionDebounceTimer, setEditQuestionDebounceTimer] = useState(null);
   // Candidate search query
   const [candidateSearch, setCandidateSearch] = useState('');
+  // Status filter for candidates list
+  const [statusFilter, setStatusFilter] = useState('all'); // all | pending | discussion | rejected | accepted | done
   // Helpers to normalize & validate phone numbers to E.164 (+[countryCode][subscriberNumber], max 15 digits)
   const toE164 = (raw, dialCode) => {
     const digits = String(raw || '').replace(/\D/g, '');
@@ -61,6 +63,7 @@ export default function Recruitment() {
   const [newCandidate, setNewCandidate] = useState({ fullName: '', email: '', phone: '+855', positionAppliedFor: '', interviewDate: '' });
   const [finalDecision, setFinalDecision] = useState({ hourlyRate: '', rateReason: '', evaluator: '' });
   const [rejectionReason, setRejectionReason] = useState('');
+  const [decisionChoice, setDecisionChoice] = useState('accept'); // 'accept' | 'reject'
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [candidateToDelete, setCandidateToDelete] = useState(null);
@@ -72,16 +75,32 @@ export default function Recruitment() {
   const [loadingInterviewData, setLoadingInterviewData] = useState(false);
   // Removed legacy calendar popover refs
 
-  // Populate decision fields when selecting a finalized candidate
+  // Populate/clear decision fields when changing selected candidate
   useEffect(() => {
-    if (selectedCandidate && ['accepted','rejected'].includes(selectedCandidate.status)) {
+    // No candidate selected: clear everything and default to accept
+    if (!selectedCandidate) {
+      setFinalDecision({ hourlyRate: '', rateReason: '', evaluator: '' });
+      setRejectionReason('');
+      setDecisionChoice('accept');
+      return;
+    }
+
+    // Finalized candidate: prefill from record
+    if (['accepted','rejected','done'].includes(selectedCandidate.status)) {
       setFinalDecision({
         hourlyRate: selectedCandidate.hourlyRate ? String(selectedCandidate.hourlyRate) : '',
         rateReason: selectedCandidate.rateReason || '',
         evaluator: selectedCandidate.evaluator || ''
       });
       setRejectionReason(selectedCandidate.rejectionReason || '');
+      setDecisionChoice(selectedCandidate.status === 'rejected' ? 'reject' : 'accept');
+      return;
     }
+
+    // Not finalized: clear prior values so nothing leaks from previous candidate
+    setFinalDecision({ hourlyRate: '', rateReason: '', evaluator: '' });
+    setRejectionReason('');
+    setDecisionChoice('accept');
   }, [selectedCandidate]);
 
   const allFilled = ['fullName','email','phone','positionAppliedFor','interviewDate']
@@ -92,7 +111,9 @@ export default function Recruitment() {
     if (loadingMore) return;
     setLoadingMore(true);
     try {
-      const { data } = await axiosInstance.get('/candidates', { params: { page: nextPage, limit: 10 } });
+      const params = { page: nextPage, limit: 10 };
+      if (statusFilter && statusFilter !== 'all') params.status = statusFilter;
+      const { data } = await axiosInstance.get('/candidates', { params });
       setCandidates(prev => nextPage === 1 ? data.data : [...prev, ...data.data.filter(n => !prev.some(p => p.id === n.id))]);
       setPage(data.page);
       setHasMore(data.hasMore);
@@ -104,7 +125,8 @@ export default function Recruitment() {
   useEffect(() => {
     (async () => {
       try {
-        const { data: iq } = await axiosInstance.get('/interview-questions');
+        // Load only default (seeded) questions by default
+        const { data: iq } = await axiosInstance.get('/interview-questions', { params: { defaultOnly: 1 } });
         setCategories(iq.categories || {});
       } catch (e) {
         toast.error(e?.response?.data?.message || 'Failed to load interview questions');
@@ -112,6 +134,33 @@ export default function Recruitment() {
     })();
     fetchCandidates(1);
   }, []);
+
+  // When starting interview for a (new) candidate, ensure we fetch default questions only
+  useEffect(() => {
+    if (!selectedCandidate) return;
+    if (activeStep !== 'interview') return;
+    // Skip finalized candidates where we don't show questions anyway
+    if (['accepted','rejected','done'].includes(selectedCandidate.status)) return;
+    (async () => {
+      try {
+        const { data: iq } = await axiosInstance.get('/interview-questions', { params: { defaultOnly: 1 } });
+        setCategories(iq.categories || {});
+      } catch (e) {
+        // Keep prior categories if fetch fails
+        console.error('Failed to fetch default interview questions', e);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCandidate?.id, activeStep]);
+
+  // Refetch when status filter changes
+  useEffect(() => {
+    // Reset list and pagination, then fetch fresh
+    setCandidates([]);
+    setHasMore(true);
+    fetchCandidates(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter]);
 
   // Infinite scroll observer
   useEffect(() => {
@@ -126,7 +175,7 @@ export default function Recruitment() {
     }, { root: null, rootMargin: '0px', threshold: 1.0 });
     observer.observe(el);
     return () => observer.disconnect();
-  }, [hasMore, loadingMore, page, candidateSearch]);
+  }, [hasMore, loadingMore, page, candidateSearch, statusFilter]);
 
   const addNewCandidate = async () => {
     setSubmitAttempted(true);
@@ -150,51 +199,31 @@ export default function Recruitment() {
     }
     
     // Normalize & validate phone number to E.164
-    let phoneE164;
-    try {
-      phoneE164 = isE164(newCandidate.phone) ? newCandidate.phone : toE164(newCandidate.phone, '855');
-      if (!isValidPhoneNumber(phoneE164)) {
-        toast.error('Please enter a valid phone number in international format');
-        return;
-      }
-      // Ensure state holds normalized value before submit
-      if (newCandidate.phone !== phoneE164) {
-        setNewCandidate((prev) => ({ ...prev, phone: phoneE164 }));
-      }
-    } catch (error) {
-      toast.error('Please enter a valid phone number');
+    const phone = String(newCandidate.phone || '').trim();
+    if (!isE164(phone)) {
+      toast.error('Enter a valid phone in international format (e.g., +85512345678)');
       return;
     }
 
+    const payload = {
+      fullName: newCandidate.fullName.trim(),
+      email: newCandidate.email.trim(),
+      phone,
+      positionAppliedFor: newCandidate.positionAppliedFor,
+      interviewDate: newCandidate.interviewDate,
+    };
+
     try {
-  // Ensure payload uses normalized E.164 phone
-  const payloadToSend = { ...newCandidate, phone: phoneE164 || newCandidate.phone };
-  const { data } = await axiosInstance.post('/candidates', payloadToSend);
-  setCandidates((prev) => [data, ...prev]);
-  // keep pagination meta consistent (might have grown total) just allow hasMore true
-  if (!hasMore) setHasMore(true);
-  setNewCandidate({ fullName: '', email: '', phone: '+855', positionAppliedFor: '', interviewDate: '' });
+      const { data } = await axiosInstance.post('/candidates', payload);
+      setCandidates(prev => [data, ...prev]);
+      setSelectedCandidate(data);
+      setActiveStep('interview');
+      setNewCandidate({ fullName: '', email: '', phone: '+855', positionAppliedFor: '', interviewDate: '' });
       setSubmitAttempted(false);
       toast.success('Candidate added');
-    } catch (e) {
-      toast.error(e?.response?.data?.message || 'Failed to add candidate');
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Failed to add candidate');
     }
-  };
-
-  const addInterviewQuestion = async (categoryName) => {
-    const text = prompt('Enter new question');
-    if (!text) return;
-    try {
-      const { data } = await axiosInstance.post('/interview-questions', { question_text: text, category: categoryName });
-      setCategories(prev => ({ ...prev, [categoryName]: [...(prev[categoryName]||[]), { id: data.id, question_text: data.question_text }] }));
-      toast.success('Question added');
-    } catch (e) { toast.error('Failed to add question'); }
-  };
-  const editInterviewQuestion = (q) => {
-    setEditingQuestion(q);
-    setEditQuestionText(q.question_text);
-    setEditSuggestions([]);
-    setShowEditModal(true);
   };
   const saveRating = async (questionId, rating) => {
     if (!selectedCandidate) return toast.error('Select a candidate first');
@@ -292,6 +321,15 @@ export default function Recruitment() {
     setSuggestions([]);
     setShowAddModal(true);
   };
+  // Open edit modal for an existing interview question
+  const editInterviewQuestion = (q, e) => {
+    if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
+    if (!q) return;
+    setEditingQuestion({ id: q.id, question_text: q.question_text });
+    setEditQuestionText(q.question_text || '');
+    setEditSuggestions([]);
+    setShowEditModal(true);
+  };
   const handleAddQuestionSubmit = async (e) => {
     e.preventDefault();
     if (!addingCategory || !newQuestionText.trim()) return;
@@ -334,8 +372,9 @@ export default function Recruitment() {
       });
       toast.success('Question updated');
       setShowEditModal(false);
-    } catch { 
-      toast.error('Failed to update question'); 
+    } catch (err) { 
+      const msg = err?.response?.data?.message || 'Failed to update question';
+      toast.error(msg);
     }
   };
   const handleEditQuestionInputChange = (val) => {
@@ -405,6 +444,23 @@ export default function Recruitment() {
     }
   };
 
+  const submitDecision = async () => {
+    if (decisionChoice === 'accept') {
+      if (!finalDecision.hourlyRate || Number(finalDecision.hourlyRate) <= 0 || !String(finalDecision.evaluator || '').trim()) {
+        toast.error('Hourly rate and evaluator are required');
+        return;
+      }
+      return acceptCandidate();
+    }
+    if (!String(rejectionReason || '').trim()) {
+      toast.error('Rejection reason is required');
+      return;
+    }
+    return rejectCandidate();
+  };
+
+  // Removed per request: createLecturerFromAccepted handler
+
   const handleDeleteCandidate = (e, candidate) => {
     e.stopPropagation();
     setCandidateToDelete(candidate);
@@ -452,6 +508,8 @@ export default function Recruitment() {
     switch (status) {
       case 'accepted':
         return 'default';
+      case 'done':
+        return 'default';
       case 'rejected':
         return 'destructive';
       case 'discussion':
@@ -466,29 +524,42 @@ export default function Recruitment() {
   const getStatusIcon = (status) => {
     switch (status) {
       case 'accepted':
-        return <CheckCircle className="w-4 h-4 text-green-500" />;
+        // White icon to contrast dark green background
+        return <CheckCircle className="w-4 h-4 text-white" />;
+      case 'done':
+        return <CheckCircle className="w-4 h-4 text-white" />;
       case 'rejected':
         return <XCircle className="w-4 h-4 text-red-500" />;
       case 'discussion':
         return <MessageCircle className="w-4 h-4 text-blue-500" />;
-      case 'interview':
-        return <Clock className="w-4 h-4 text-orange-500" />;
       default:
         return <AlertCircle className="w-4 h-4 text-gray-500" />;
     }
   };
 
-  const StarRating = ({ rating, onRatingChange }) => (
-    <div className="flex gap-1">
-      {[1, 2, 3, 4, 5].map((star) => (
-        <button key={star} type="button" onClick={() => onRatingChange(star)} className={`p-1 rounded transition-colors ${star <= rating ? 'text-yellow-400' : 'text-gray-300'} hover:text-yellow-400`}>
-          <Star className="w-5 h-5 fill-current" />
-        </button>
-      ))}
-    </div>
-  );
+  // Extra classes to override Badge background/text for specific statuses
+  const getStatusBadgeClass = (status) => {
+    switch (status) {
+      case 'accepted':
+      case 'done':
+        // Dark green background with white text
+        return 'bg-green-600 text-white';
+      default:
+        return '';
+    }
+  };
+
+  // Consider a candidate "already interviewed" if they have moved beyond interview (discussion/accepted/rejected)
+  // or if an interviewScore has been recorded.
+  const isAlreadyInterviewed = (candidate) => {
+    if (!candidate) return false;
+    const postInterviewStatuses = ['discussion', 'accepted', 'rejected', 'done'];
+    return postInterviewStatuses.includes(candidate.status) || candidate.interviewScore != null;
+  };
 
   // Removed legacy calendar popover handlers & refs (were causing runtime errors after DateTimePicker migration)
+
+  // Allow accessing all steps; do not auto-redirect away from any tab
 
   return (
     <div className="min-h-screen bg-gray-50 px-4 sm:px-6 py-6 overflow-x-hidden">
@@ -503,11 +574,32 @@ export default function Recruitment() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
           {/* Recruitment Process Steps */}
           <div className="lg:col-span-2">
-            <Tabs value={activeStep} onValueChange={setActiveStep}>
+            <Tabs
+              value={activeStep}
+              onValueChange={(next) => setActiveStep(next)}
+            >
               <TabsList>
-                <TabsTrigger value="add">Add Candidate</TabsTrigger>
-                <TabsTrigger value="interview">Interview</TabsTrigger>
-                <TabsTrigger value="discussion">Discussion</TabsTrigger>
+                <TabsTrigger
+                  value="add"
+                  disabled={false}
+                  title={undefined}
+                >
+                  Add Candidate
+                </TabsTrigger>
+                <TabsTrigger
+                  value="interview"
+                  disabled={false}
+                  title={undefined}
+                >
+                  Interview
+                </TabsTrigger>
+                <TabsTrigger
+                  value="discussion"
+                  disabled={false}
+                  title={undefined}
+                >
+                  Discussion
+                </TabsTrigger>
                 <TabsTrigger value="final">Final Decision</TabsTrigger>
               </TabsList>
 
@@ -524,7 +616,7 @@ export default function Recruitment() {
                   <CardContent className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <label className="block text-sm font-medium text-gray-700">Full Name</label>
+                        <label className="block text-sm font-medium text-gray-700">Full Name <span className="text-red-500" aria-hidden="true">*</span></label>
                         <Input
                           required
                           value={newCandidate.fullName}
@@ -549,7 +641,7 @@ export default function Recruitment() {
                         )}
                       </div>
                       <div className="space-y-2">
-                        <label className="block text-sm font-medium text-gray-700">Email</label>
+                        <label className="block text-sm font-medium text-gray-700">Email <span className="text-red-500" aria-hidden="true">*</span></label>
                         <Input
                           required
                           type="email"
@@ -560,7 +652,7 @@ export default function Recruitment() {
                         />
                       </div>
                       <div className="space-y-2">
-                        <label className="block text-sm font-medium text-gray-700">Phone</label>
+                        <label className="block text-sm font-medium text-gray-700">Phone <span className="text-red-500" aria-hidden="true">*</span></label>
                         <PhoneInput
                           country={'kh'}
                           value={(newCandidate.phone || '').replace(/^\+/, '')}
@@ -600,21 +692,20 @@ export default function Recruitment() {
                         )}
                       </div>
                       <div className="space-y-2">
-                        <label className="block text-sm font-medium text-gray-700">Position Applied For</label>
+                        <label className="block text-sm font-medium text-gray-700">Position Applied For <span className="text-red-500" aria-hidden="true">*</span></label>
                         <Select value={newCandidate.positionAppliedFor} onValueChange={(value) => setNewCandidate({ ...newCandidate, positionAppliedFor: value })} placeholder="Select position">
                           <SelectItem value="Lecturer">Lecturer</SelectItem>
                           <SelectItem value="Assistant Lecturer">Assistant Lecturer</SelectItem>
                           <SelectItem value="Senior Lecturer">Senior Lecturer</SelectItem>
                           <SelectItem value="Adjunct Lecturer">Adjunct Lecturer</SelectItem>
                           <SelectItem value="Visiting Lecturer">Visiting Lecturer</SelectItem>
-                          <SelectItem value="Professor">Professor</SelectItem>
                         </Select>
                         {submitAttempted && !newCandidate.positionAppliedFor && (
                           <p className="text-xs text-red-600">This field is required</p>
                         )}
                       </div>
                       <div className="space-y-2 md:col-span-2">
-                        <label className="block text-sm font-medium text-gray-700">Interview Date & Time</label>
+                        <label className="block text-sm font-medium text-gray-700">Interview Date & Time <span className="text-red-500" aria-hidden="true">*</span></label>
                         <LocalizationProvider dateAdapter={AdapterDayjs}>
                           <DateTimePicker
                             label="Interview Date & Time"
@@ -657,6 +748,29 @@ export default function Recruitment() {
                       </div>
                     )}
                     {selectedCandidate && (
+                      ['accepted','rejected','done','discussion'].includes(selectedCandidate.status) ? (
+                        <div className="text-center py-10">
+                          {selectedCandidate.status === 'accepted' || selectedCandidate.status === 'done' ? (
+                            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                              <CheckCircle className="w-8 h-8 text-green-600" />
+                            </div>
+                          ) : selectedCandidate.status === 'rejected' ? (
+                            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                              <XCircle className="w-8 h-8 text-red-600" />
+                            </div>
+                          ) : (
+                            <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                              <MessageCircle className="w-8 h-8 text-blue-600" />
+                            </div>
+                          )}
+                          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                            {selectedCandidate.status === 'rejected' ? 'Candidate Rejected' : selectedCandidate.status === 'discussion' ? 'Candidate Under Discussion' : 'Candidate Accepted'}
+                          </h3>
+                          <p className="text-gray-600">
+                            {selectedCandidate.status === 'discussion' ? 'Interview evaluation is hidden while the candidate is under discussion.' : `Interview details are hidden for ${selectedCandidate.status === 'rejected' ? 'rejected' : 'accepted or done'} candidates.`}
+                          </p>
+                        </div>
+                      ) : (
                       <div className="space-y-4">
                         {/* Overall Score */}
                         <div className="flex flex-col md:flex-row md:items-center gap-3 p-3 border rounded-lg bg-white shadow-sm">
@@ -736,7 +850,7 @@ export default function Recruitment() {
                                             <div className="flex items-center gap-2 opacity-80 group-hover:opacity-100 transition-opacity">
                                               <button
                                                 type='button'
-                                                onClick={()=>editInterviewQuestion(q)}
+                                                onClick={(e)=>editInterviewQuestion(q, e)}
                                                 aria-label='Edit question'
                                                 title='Edit question'
                                                 className='w-8 h-8 flex items-center justify-center rounded-full border border-transparent text-gray-400 hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500/40 transition'
@@ -797,6 +911,7 @@ export default function Recruitment() {
                           })}
                         </div>
                       </div>
+                      )
                     )}
                   </CardContent>
                 </Card>
@@ -848,28 +963,32 @@ export default function Recruitment() {
                             <div><span className="text-gray-600">Name:</span><span className="ml-2 font-medium">{selectedCandidate.fullName}</span></div>
                             <div><span className="text-gray-600">Position:</span><span className="ml-2 font-medium">{selectedCandidate.positionAppliedFor}</span></div>
                             <div><span className="text-gray-600">Interview Score:</span><span className="ml-2 font-medium">{selectedCandidate.interviewScore != null ? Number(selectedCandidate.interviewScore).toFixed(1) : '-'} /5.0</span></div>
-                            <div><span className="text-gray-600">Status:</span><Badge variant={getStatusColor(selectedCandidate.status)} className="ml-2">{getStatusIcon(selectedCandidate.status)}<span className="ml-1">{selectedCandidate.status}</span></Badge></div>
+                            <div><span className="text-gray-600">Status:</span><Badge variant={getStatusColor(selectedCandidate.status)} className={`ml-2 ${getStatusBadgeClass(selectedCandidate.status)}`}>{getStatusIcon(selectedCandidate.status)}<span className="ml-1">{selectedCandidate.status}</span></Badge></div>
                           </div>
                         </div>
                         {(() => {
-                          const finalized = ['accepted','rejected'].includes(selectedCandidate.status);
+                          const finalized = ['accepted','rejected','done'].includes(selectedCandidate.status);
                           if (finalized) {
                             return (
                               <div className="space-y-6">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                  <div className="space-y-1">
-                                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Hourly Rate ($)</label>
-                                    <Input disabled value={selectedCandidate.hourlyRate ?? ''} className="bg-gray-100 text-gray-700" />
-                                  </div>
-                                  <div className="space-y-1">
-                                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Evaluator</label>
-                                    <Input disabled value={selectedCandidate.evaluator || ''} className="bg-gray-100 text-gray-700" />
-                                  </div>
-                                </div>
-                                <div className="space-y-1">
-                                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Reason for Rate</label>
-                                  <Textarea disabled value={selectedCandidate.rateReason || ''} rows={3} className="bg-gray-100 text-gray-700" />
-                                </div>
+                                {(selectedCandidate.status === 'accepted' || selectedCandidate.status === 'done') && (
+                                  <>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                      <div className="space-y-1">
+                                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Hourly Rate ($)</label>
+                                        <Input disabled value={selectedCandidate.hourlyRate ?? ''} className="bg-gray-100 text-gray-700" />
+                                      </div>
+                                      <div className="space-y-1">
+                                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Evaluator</label>
+                                        <Input disabled value={selectedCandidate.evaluator || ''} className="bg-gray-100 text-gray-700" />
+                                      </div>
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Reason for Rate</label>
+                                      <Textarea disabled value={selectedCandidate.rateReason || ''} rows={3} className="bg-gray-100 text-gray-700" />
+                                    </div>
+                                  </>
+                                )}
                                 {selectedCandidate.status === 'rejected' && (
                                   <div className="space-y-1">
                                     <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Reason for Rejection</label>
@@ -877,46 +996,81 @@ export default function Recruitment() {
                                   </div>
                                 )}
                                 <p className="text-[11px] text-gray-500">Finalized decision. Fields are read-only.</p>
+                                {selectedCandidate.status === 'accepted' && (
+                                  <div className="pt-2 flex justify-end">
+                                    {/* Removed per request: Create Lecturer from Candidate button */}
+                                  </div>
+                                )}
                               </div>
                             );
                           }
                           return (
                             <>
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                  <label className="block text-sm font-medium text-gray-700">Hourly Rate ($)</label>
-                                  <Input type="number" value={finalDecision.hourlyRate} onChange={(e) => setFinalDecision({ ...finalDecision, hourlyRate: e.target.value })} placeholder="85" />
+                              {/* Decision toggle */}
+                              <div className="flex items-center gap-3">
+                                <label className="text-sm font-medium text-gray-700">Decision</label>
+                                <div className="inline-flex rounded-md overflow-hidden border border-gray-200">
+                                  <button
+                                    type="button"
+                                    onClick={() => setDecisionChoice('accept')}
+                                    className={`px-3 py-1.5 text-sm ${decisionChoice==='accept' ? 'bg-green-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+                                  >Accept</button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setDecisionChoice('reject')}
+                                    className={`px-3 py-1.5 text-sm border-l border-gray-200 ${decisionChoice==='reject' ? 'bg-red-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+                                  >Reject</button>
                                 </div>
-                                <div className="space-y-2">
-                                  <label className="block text-sm font-medium text-gray-700">Name of Evaluator</label>
-                                  <Input value={finalDecision.evaluator} onChange={(e) => setFinalDecision({ ...finalDecision, evaluator: e.target.value })} placeholder="Dr. John Smith" />
+                              </div>
+
+                              {/* Decision card */}
+                              {decisionChoice === 'accept' ? (
+                                <div className="mt-4 space-y-4 border rounded-md p-4 bg-green-50 border-green-200">
+                                  <h4 className="text-sm font-semibold text-green-800">Acceptance Details</h4>
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                      <label className="block text-sm font-medium text-gray-700">Hourly Rate ($)</label>
+                                      <Input type="number" value={finalDecision.hourlyRate} onChange={(e) => setFinalDecision({ ...finalDecision, hourlyRate: e.target.value })} placeholder="85" />
+                                    </div>
+                                    <div className="space-y-2">
+                                      <label className="block text-sm font-medium text-gray-700">Name of Evaluator</label>
+                                      <Input value={finalDecision.evaluator} onChange={(e) => setFinalDecision({ ...finalDecision, evaluator: e.target.value })} placeholder="Dr. John Smith" />
+                                    </div>
+                                  </div>
+                                  <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-gray-700">Reason for Rate</label>
+                                    <Textarea
+                                      value={finalDecision.rateReason}
+                                      onChange={(e) => setFinalDecision({ ...finalDecision, rateReason: (e.target.value || '').slice(0,160) })}
+                                      placeholder="Explain the reasoning for the hourly rate..."
+                                      rows={3}
+                                      maxLength={160}
+                                    />
+                                    <div className="mt-1 text-[11px] text-gray-500 text-right">{(finalDecision.rateReason || '').length}/160</div>
+                                  </div>
                                 </div>
-                              </div>
-                              <div className="space-y-2">
-                                <label className="block text-sm font-medium text-gray-700">Reason for Rate</label>
-                                <Textarea
-                                  value={finalDecision.rateReason}
-                                  onChange={(e) => setFinalDecision({ ...finalDecision, rateReason: (e.target.value || '').slice(0,160) })}
-                                  placeholder="Explain the reasoning for the hourly rate..."
-                                  rows={3}
-                                  maxLength={160}
-                                />
-                                <div className="mt-1 text-[11px] text-gray-500 text-right">{(finalDecision.rateReason || '').length}/160</div>
-                              </div>
-                              <div className="space-y-2">
-                                <label className="block text-sm font-medium text-gray-700">Rejection Reason (if rejecting)</label>
-                                <Textarea
-                                  value={rejectionReason}
-                                  onChange={(e) => setRejectionReason((e.target.value || '').slice(0,160))}
-                                  placeholder="Enter reason for rejection..."
-                                  rows={3}
-                                  maxLength={160}
-                                />
-                                <div className="mt-1 text-[11px] text-gray-500 text-right">{(rejectionReason || '').length}/160</div>
-                              </div>
-                              <div className="flex justify-end gap-4">
-                                <Button onClick={rejectCandidate} variant="outline" className="text-red-600 border-red-600 hover:bg-red-50"><XCircle className="w-4 h-4 mr-2" />Reject Candidate</Button>
-                                <Button onClick={acceptCandidate} className="bg-green-600 hover:bg-green-700"><CheckCircle className="w-4 h-4 mr-2" />Accept Candidate</Button>
+                              ) : (
+                                <div className="mt-4 space-y-4 border rounded-md p-4 bg-red-50 border-red-200">
+                                  <h4 className="text-sm font-semibold text-red-800">Rejection Details</h4>
+                                  <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-gray-700">Reason for Rejection</label>
+                                    <Textarea
+                                      value={rejectionReason}
+                                      onChange={(e) => setRejectionReason((e.target.value || '').slice(0,160))}
+                                      placeholder="Provide a brief reason for rejecting this candidate..."
+                                      rows={3}
+                                      maxLength={160}
+                                    />
+                                    <div className="mt-1 text-[11px] text-gray-500 text-right">{(rejectionReason || '').length}/160</div>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Submit */}
+                              <div className="flex justify-end gap-4 mt-4">
+                                <Button onClick={submitDecision} className={`${decisionChoice==='accept' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'} text-white`}>
+                                  {decisionChoice==='accept' ? (<><CheckCircle className="w-4 h-4 mr-2"/>Submit Acceptance</>) : (<><XCircle className="w-4 h-4 mr-2"/>Submit Rejection</>)}
+                                </Button>
                               </div>
                             </>
                           );
@@ -939,6 +1093,25 @@ export default function Recruitment() {
                 <CardDescription>All recruitment candidates</CardDescription>
               </CardHeader>
               <CardContent>
+                {/* Status filter */}
+                <div className="mb-3 flex items-center gap-2">
+                  <span className="text-xs text-gray-500">Status</span>
+                  <Select
+                    value={statusFilter}
+                    onValueChange={(v)=> setStatusFilter(v)}
+                    placeholder="All statuses"
+                    className="min-w-[200px]"
+                    buttonClassName="py-2.5 text-sm"
+                    dropdownClassName="text-sm"
+                  >
+                    <SelectItem value="all" className="py-2.5">All</SelectItem>
+                    <SelectItem value="pending" className="py-2.5">Pending</SelectItem>
+                    <SelectItem value="discussion" className="py-2.5">Discussion</SelectItem>
+                    <SelectItem value="rejected" className="py-2.5">Rejected</SelectItem>
+                    <SelectItem value="accepted" className="py-2.5">Accepted</SelectItem>
+                    <SelectItem value="done" className="py-2.5">Done</SelectItem>
+                  </Select>
+                </div>
                 <div className="mb-4 relative">
                   <Search className="w-4 h-4 absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
                   <Input
@@ -954,10 +1127,17 @@ export default function Recruitment() {
                     .filter(c => !candidateSearch.trim() || c.fullName.toLowerCase().includes(candidateSearch.trim().toLowerCase()))
                     .map(candidate => {
                       const handleClick = () => {
+                        // Select candidate and route to the appropriate step based on status
                         setSelectedCandidate(candidate);
-                        if (candidate.status === 'pending' || candidate.status === 'interview') setActiveStep('interview');
-                        else if (candidate.status === 'discussion') setActiveStep('discussion');
-                        else setActiveStep('final');
+                        const s = String(candidate.status || '').toLowerCase();
+                        if (['accepted','rejected','done'].includes(s)) {
+                          setActiveStep('final');
+                        } else if (s === 'discussion') {
+                          setActiveStep('discussion');
+                        } else {
+                          // default for pending or interview
+                          setActiveStep('interview');
+                        }
                       };
                       return (
                         <div
@@ -975,20 +1155,24 @@ export default function Recruitment() {
                                 <p className="text-[10px] text-gray-500 mt-0.5">{dayjs(candidate.interviewDate).format('MMM D, HH:mm')}</p>
                               )}
                               <div className="flex items-center gap-2 mt-2">
-                                <Badge variant={getStatusColor(candidate.status)} className="text-xs">{getStatusIcon(candidate.status)}<span className="ml-1">{candidate.status}</span></Badge>
+                                <Badge variant={getStatusColor(candidate.status)} className={`text-xs ${getStatusBadgeClass(candidate.status)}`}>{getStatusIcon(candidate.status)}<span className="ml-1">{candidate.status}</span></Badge>
                               </div>
                               {candidate.interviewScore && (
                                 <p className="text-xs text-gray-500 mt-1">Score: {Number(candidate.interviewScore).toFixed(1)}/5.0</p>
                               )}
                             </div>
                             <div className="flex items-center gap-1">
-                              {(candidate.status === 'interview' || candidate.status === 'discussion' || candidate.status === 'accepted' || candidate.status === 'rejected') && (
+                              {(
+                                // Show only if interviewed: has score or moved beyond interview
+                                (typeof candidate.interviewScore === 'number' && candidate.interviewScore > 0) ||
+                                ['discussion','accepted','rejected','done'].includes(candidate.status)
+                              ) && (
                                 <button
                                   type="button"
                                   onClick={(e)=>handleViewQuestions(e, candidate)}
                                   className="shrink-0 w-7 h-7 flex items-center justify-center rounded-full text-gray-400 hover:text-blue-600 hover:bg-blue-50 border border-transparent hover:border-blue-200 transition"
-                                  title="View interview questions and responses"
-                                  aria-label="View interview questions"
+                                  title="View candidate info and interview (read-only)"
+                                  aria-label="View candidate details"
                                 >
                                   <Eye className="w-3.5 h-3.5" />
                                 </button>
@@ -1206,7 +1390,7 @@ export default function Recruitment() {
                                 {responses.length} question{responses.length !== 1 ? 's' : ''} • 
                                 Average: {responses.filter(r => r.rating).length > 0
                                   ? (responses.filter(r => r.rating).reduce((sum, r) => sum + r.rating, 0) / 
-                                     responses.filter(r => r.rating).length).toFixed(1)
+                                    responses.filter(r => r.rating).length).toFixed(1)
                                   : 'N/A'}/5.0
                               </p>
                             </div>

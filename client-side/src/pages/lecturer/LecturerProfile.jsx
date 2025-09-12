@@ -180,11 +180,11 @@ export default function LecturerProfile(){
           {/* Overview Card */}
           <Card className="shadow-sm hover:shadow-xl transition-all duration-300 border border-gray-100/70 bg-white/90 backdrop-blur rounded-2xl overflow-hidden group">
             <CardContent className="p-6 md:p-10">
-              <div className="flex flex-col xl:flex-row gap-10 items-start xl:items-center">
+      <div className="flex flex-col xl:flex-row gap-10 items-start xl:items-center">
                 <div className="flex items-center gap-6 w-full md:w-auto">
                   <Avatar name={profile.full_name_english || profile.user_display_name || 'Lecturer'} />
                   <div className="space-y-1.5">
-                    <h1 className="text-2xl md:text-[2rem] font-semibold leading-tight text-gray-900 tracking-tight flex items-center gap-3">
+        <h1 className="text-2xl md:text-[2rem] font-semibold leading-tight text-gray-900 tracking-tight flex items-center gap-3 break-words">
                       <span>{profile.full_name_english || 'Unnamed Lecturer'}</span>
                       <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-sm">Profile</span>
                     </h1>
@@ -200,14 +200,14 @@ export default function LecturerProfile(){
                   <OverviewItem label="Department" value={profile.department_name || '—'} />
                   <OverviewItem label="Join Date" value={new Date(profile.join_date).toLocaleDateString()} />
                 </div>
-                <div className="xl:ml-auto flex gap-2 mt-4 xl:mt-0">
+                <div className="xl:ml-auto flex flex-col sm:flex-row gap-2 mt-4 xl:mt-0 w-full xl:w-auto">
                   {editMode ? (
                     <>
-                      <Button variant="secondary" size="sm" onClick={cancel} disabled={saving}>Cancel</Button>
-                      <Button size="sm" onClick={save} disabled={saving} className="bg-indigo-600 hover:bg-indigo-700">{saving?'Saving...':'Save'}</Button>
+                      <Button variant="secondary" size="sm" onClick={cancel} disabled={saving} className="w-full sm:w-auto">Cancel</Button>
+                      <Button size="sm" onClick={save} disabled={saving} className="bg-indigo-600 hover:bg-indigo-700 w-full sm:w-auto">{saving?'Saving...':'Save'}</Button>
                     </>
                   ) : (
-                    <Button size="sm" onClick={()=>setEditMode(true)} className="bg-indigo-600 hover:bg-indigo-700 shadow-sm group-hover:shadow-md transition-shadow">Edit Profile</Button>
+                    <Button size="sm" onClick={()=>setEditMode(true)} className="bg-indigo-600 hover:bg-indigo-700 shadow-sm group-hover:shadow-md transition-shadow w-full sm:w-auto">Edit Profile</Button>
                   )}
                 </div>
               </div>
@@ -223,7 +223,7 @@ export default function LecturerProfile(){
                   <Field name="full_name_english" label="Full Name (English)" value={form.full_name_english} onChange={onChange} onPaste={onPaste} error={errors.full_name_english} disabled={!editMode} />
                   <Field name="full_name_khmer" label="Full Name (Khmer)" value={form.full_name_khmer} onChange={onChange} disabled={!editMode} />
                   <Field name="phone_number" label="Contact Number" value={form.phone_number} onChange={onChange} disabled={!editMode} error={errors.phone_number} />
-                  <div className="md:col-span-2 xl:col-span-3 grid grid-cols-3 gap-6 items-end">
+                  <div className="md:col-span-2 xl:col-span-3 grid grid-cols-1 sm:grid-cols-3 gap-6 items-end">
                     <ReadOnly label="School Email" value={profile.user_email || profile.email || ''} />
                     <ReadOnly label="Position" value={profile.position || profile.occupation || ''} />
                     <ReadOnly label="Hourly Rate This Year ($)" value={form.hourlyRateThisYear || ''} />
@@ -285,15 +285,15 @@ export default function LecturerProfile(){
                 {profile.course_syllabus ? (
                   <DocRow label="Course Syllabus" exists={!!profile.course_syllabus} url={profile.course_syllabus} onUpload={(f)=>uploadFiles({ syllabus:f })} uploading={fileUploading} editable={editMode} />
                 ) : (
-                  <div className="flex items-center justify-between gap-4 text-sm p-4 rounded-xl border border-dashed border-gray-200 bg-gradient-to-br from-white to-gray-50/70">
-                    <div>
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 text-sm p-4 rounded-xl border border-dashed border-gray-200 bg-gradient-to-br from-white to-gray-50/70">
+                    <div className="w-full sm:w-auto">
                       <p className="font-medium text-gray-800 flex items-center gap-2 tracking-wide">
                         <span className="inline-block w-2 h-2 rounded-full bg-gray-300 shadow" />
                         Course Syllabus <span className="text-[10px] font-normal text-gray-400 uppercase tracking-wider">Required</span>
                       </p>
                       <p className="text-[11px] mt-1 text-gray-400">Not uploaded</p>
                     </div>
-                    <Button type="button" size="sm" className="bg-indigo-600 hover:bg-indigo-700 flex items-center gap-1 shadow-sm" onClick={()=>setShowSyllabusDialog(true)}>
+                    <Button type="button" size="sm" className="bg-indigo-600 hover:bg-indigo-700 flex items-center gap-1 shadow-sm w-full sm:w-auto" onClick={()=>setShowSyllabusDialog(true)}>
                       <Upload className="h-3.5 w-3.5" /> Upload
                     </Button>
                   </div>
@@ -325,7 +325,7 @@ export default function LecturerProfile(){
                         onClick={()=>{ setShowCurrent(s=>!s); setAnimCurrent(true); setTimeout(()=>setAnimCurrent(false),200); }}
                         className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-500 hover:text-gray-700 focus:outline-none"
                       >
-                        {showCurrent ? <EyeOff className={`h-4 w-4 transition-transform ${animCurrent ? 'scale-110 rotate-12' : ''}`} /> : <Eye className={`h-4 w-4 transition-transform ${animCurrent ? 'scale-110 rotate-12' : ''}`} />}
+                        {showCurrent ? <Eye className={`h-4 w-4 transition-transform ${animCurrent ? 'scale-110 rotate-12' : ''}`} /> : <EyeOff className={`h-4 w-4 transition-transform ${animCurrent ? 'scale-110 rotate-12' : ''}`} />}
                       </button>
                     </div>
                   </div>
@@ -339,7 +339,7 @@ export default function LecturerProfile(){
                         onClick={()=>{ setShowNew(s=>!s); setAnimNew(true); setTimeout(()=>setAnimNew(false),200); }}
                         className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-500 hover:text-gray-700 focus:outline-none"
                       >
-                        {showNew ? <EyeOff className={`h-4 w-4 transition-transform ${animNew ? 'scale-110 rotate-12' : ''}`} /> : <Eye className={`h-4 w-4 transition-transform ${animNew ? 'scale-110 rotate-12' : ''}`} />}
+                        {showNew ? <Eye className={`h-4 w-4 transition-transform ${animNew ? 'scale-110 rotate-12' : ''}`} /> : <EyeOff className={`h-4 w-4 transition-transform ${animNew ? 'scale-110 rotate-12' : ''}`} />}
                       </button>
                     </div>
                   </div>
@@ -353,7 +353,7 @@ export default function LecturerProfile(){
                         onClick={()=>{ setShowConfirm(s=>!s); setAnimConfirm(true); setTimeout(()=>setAnimConfirm(false),200); }}
                         className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-500 hover:text-gray-700 focus:outline-none"
                       >
-                        {showConfirm ? <EyeOff className={`h-4 w-4 transition-transform ${animConfirm ? 'scale-110 rotate-12' : ''}`} /> : <Eye className={`h-4 w-4 transition-transform ${animConfirm ? 'scale-110 rotate-12' : ''}`} />}
+                        {showConfirm ? <Eye className={`h-4 w-4 transition-transform ${animConfirm ? 'scale-110 rotate-12' : ''}`} /> : <EyeOff className={`h-4 w-4 transition-transform ${animConfirm ? 'scale-110 rotate-12' : ''}`} />}
                       </button>
                     </div>
                   </div>
@@ -365,7 +365,7 @@ export default function LecturerProfile(){
       )}
       {/* Syllabus Upload Modal */}
       <Dialog open={showSyllabusDialog} onOpenChange={setShowSyllabusDialog}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="w-[92vw] max-w-md sm:w-auto">
           <DialogHeader>
             <DialogTitle>Upload Course Syllabus</DialogTitle>
             <DialogDescription>Attach a PDF syllabus. This will be stored in your personal folder.</DialogDescription>
@@ -414,14 +414,14 @@ function Field({ name,label,value,onChange,disabled,as,options,type='text',error
   return (
     <div className="space-y-1 flex flex-col justify-end">
       <Label htmlFor={name} className="text-xs font-medium text-gray-600">{label}</Label>
-      {as==='textarea' && <Textarea id={name} name={name} value={value} onChange={onChange} onPaste={onPaste} disabled={disabled} readOnly={readOnly} className="bg-white" rows={4} />}
+  {as==='textarea' && <Textarea id={name} name={name} value={value} onChange={onChange} onPaste={onPaste} disabled={disabled} readOnly={readOnly} className="bg-white w-full" rows={4} />}
       {as==='select' && (
         <select id={name} name={name} value={value} onChange={onChange} onPaste={onPaste} disabled={disabled} readOnly={readOnly} className="w-full border rounded px-2 py-1 text-sm bg-white disabled:opacity-60">
           <option value="">Select...</option>
           {options.map(o=> <option key={o} value={o}>{o}</option>)}
         </select>
       )}
-      {!as && <Input id={name} name={name} value={value} onChange={onChange} onPaste={onPaste} disabled={disabled} readOnly={readOnly} type={type} className="bg-white" />}
+  {!as && <Input id={name} name={name} value={value} onChange={onChange} onPaste={onPaste} disabled={disabled} readOnly={readOnly} type={type} className="bg-white w-full" />}
       {error && <p className="text-xs text-red-600">{error}</p>}
     </div>
   );
@@ -431,7 +431,7 @@ function ReadOnly({ label, value }){
   return (
     <div className="space-y-1 group">
       <Label className="text-xs font-medium text-gray-600 flex items-center gap-1">{label}{value && <span className="text-[9px] uppercase tracking-wide text-indigo-500/70 font-semibold">Read only</span>}</Label>
-      <div className="text-sm bg-gradient-to-br from-gray-50 to-white border border-gray-200 rounded-lg px-2.5 py-1.5 min-h-[42px] flex items-center font-medium text-gray-700 group-hover:border-gray-300 transition-colors select-text shadow-inner">{value || '—'}</div>
+  <div className="text-sm bg-gradient-to-br from-gray-50 to-white border border-gray-200 rounded-lg px-2.5 py-1.5 min-h-[42px] flex items-center font-medium text-gray-700 group-hover:border-gray-300 transition-colors select-text shadow-inner break-words">{value || '—'}</div>
     </div>
   );
 }
@@ -460,7 +460,7 @@ function Avatar({ name }){
   return (
     <div className="relative">
       <div className="absolute -inset-0.5 bg-gradient-to-tr from-indigo-500 via-blue-500 to-emerald-500 rounded-full blur opacity-60 group-hover:opacity-90 transition" />
-      <div className={`relative w-20 h-20 rounded-full flex items-center justify-center text-white text-xl font-semibold shadow-lg ring-4 ring-white ${color}`}>{initials||'L'}</div>
+  <div className={`relative w-16 h-16 md:w-20 md:h-20 rounded-full flex items-center justify-center text-white text-xl font-semibold shadow-lg ring-4 ring-white ${color}`}>{initials||'L'}</div>
     </div>
   );
 }
@@ -506,15 +506,15 @@ function SectionHeader({ title, icon, accent='indigo' }){
 function DocRow({ label, exists, url, onUpload, uploading, editable }){
   const downloadUrl = exists ? buildFileUrl(url) : null;
   return (
-    <div className="flex items-center justify-between gap-4 text-sm p-4 rounded-xl border border-dashed border-gray-200 hover:border-gray-300 transition-colors bg-gradient-to-br from-white to-gray-50/70 group">
-      <div>
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 text-sm p-4 rounded-xl border border-dashed border-gray-200 hover:border-gray-300 transition-colors bg-gradient-to-br from-white to-gray-50/70 group">
+      <div className="w-full sm:w-auto">
         <p className="font-medium text-gray-800 flex items-center gap-2 tracking-wide">
           {exists ? <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 shadow" /> : <span className="inline-block w-2 h-2 rounded-full bg-gray-300 shadow-inner" />}
           {label}
         </p>
         <p className={`text-[11px] mt-1 ${exists ? 'text-emerald-600 font-medium' : 'text-gray-400 italic'}`}>{exists? 'Uploaded' :'Not uploaded'}</p>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center flex-wrap gap-2">
         {exists && (
           <a
             href={downloadUrl}

@@ -1,14 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom';
-import { X, Loader2, CheckCircle2 } from 'lucide-react';
+import { X, Loader2, CheckCircle2, Clipboard } from 'lucide-react';
 import { axiosInstance } from '../lib/axios';
 import toast from 'react-hot-toast';
 
 export default function CreateLecturerModal({ isOpen, onClose, onLecturerCreated }) {
-  const [formData, setFormData] = useState({ fullName: '', email: '', position: '' });
+  const [formData, setFormData] = useState({ fullName: '', email: '', position: '', title: '', gender: '' });
+  const [acceptedCandidates, setAcceptedCandidates] = useState([]); // used as suggestions list
+  const [selectedCandidateId, setSelectedCandidateId] = useState('');
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successData, setSuccessData] = useState(null);
+  const [candidateQuery, setCandidateQuery] = useState('');
+  const [suggestOpen, setSuggestOpen] = useState(false);
+  const [suggestLoading, setSuggestLoading] = useState(false);
+  const [searchTimer, setSearchTimer] = useState(null);
 
   const handleChange = e => {
     const { name, value } = e.target;
@@ -34,6 +40,8 @@ export default function CreateLecturerModal({ isOpen, onClose, onLecturerCreated
     } else if (formData.fullName.trim().length < 2) {
       errs.fullName = 'Name must be at least 2 characters long';
     }
+    if (!formData.title.trim()) errs.title = 'Title required';
+    if (!formData.gender.trim()) errs.gender = 'Gender required';
     
     if (!formData.email.trim()) errs.email = 'Email required';
     else if (!/^[A-Z0-9._%+-]+@cadt\.edu\.kh$/i.test(formData.email)) errs.email = 'Must be CADT email';
@@ -42,14 +50,68 @@ export default function CreateLecturerModal({ isOpen, onClose, onLecturerCreated
     return Object.keys(errs).length === 0;
   };
 
+  // When selecting a candidate from suggestions, auto-fill position and name
+  const onSelectCandidate = (cand) => {
+    if (!cand) return;
+    setSelectedCandidateId(String(cand.id));
+    setCandidateQuery(cand.fullName || '');
+    setSuggestOpen(false);
+    // Normalize position to canonical values used by backend
+    const normalizePosition = (val) => {
+      const s = String(val || '').trim();
+      if (!s) return 'Lecturer';
+      if (/\b(teaching\s*assistant|assistant|\bta\b)\b/i.test(s)) return 'Teaching Assistant (TA)';
+      if (/(lecturer|instructor|teacher)/i.test(s)) return 'Lecturer';
+      return 'Lecturer';
+    };
+    setFormData(p => ({
+      ...p,
+      fullName: cand.fullName || p.fullName,
+      position: normalizePosition(cand.positionAppliedFor) || p.position,
+      title: cand.title || p.title,
+      gender: cand.gender || p.gender
+    }));
+  };
+
+  // Debounced server-side search for accepted candidates
+  const searchAcceptedCandidates = async (q) => {
+    if (!q || !q.trim()) { setAcceptedCandidates([]); return; }
+    setSuggestLoading(true);
+    try {
+      const res = await axiosInstance.get('/candidates', { params: { status: 'accepted', search: q.trim(), limit: 10 } });
+      setAcceptedCandidates(res.data?.data || []);
+    } catch (e) {
+      // silent
+    } finally { setSuggestLoading(false); }
+  };
+
+  // Clear suggestions when modal opens/closes
+  useEffect(() => {
+    if (!isOpen) return;
+    setAcceptedCandidates([]);
+    setCandidateQuery('');
+    setSuggestOpen(false);
+  }, [isOpen]);
+
   const submit = async e => {
     e.preventDefault();
     if (!validate()) return;
+  setSuggestOpen(false);
     setIsSubmitting(true);
     try {
-  // Backend route should inject role & a default department, but send explicitly for robustness
-  const payload = { fullName: formData.fullName, email: formData.email, position: formData.position }; // role & department inferred server-side
-  const res = await axiosInstance.post('/lecturers', payload);
+      let res;
+      if (selectedCandidateId) {
+        // Use new endpoint to create from candidate and auto mark done
+        res = await axiosInstance.post(`/lecturers/from-candidate/${selectedCandidateId}`, {
+          title: formData.title,
+          gender: formData.gender,
+          email: formData.email
+        });
+      } else {
+        // Fallback: manual create
+        const payload = { fullName: formData.fullName, email: formData.email, position: formData.position, title: formData.title, gender: formData.gender };
+        res = await axiosInstance.post('/lecturers', payload);
+      }
       setSuccessData(res.data);
       onLecturerCreated(res.data);
     } catch (err) {
@@ -59,7 +121,15 @@ export default function CreateLecturerModal({ isOpen, onClose, onLecturerCreated
     } finally { setIsSubmitting(false); }
   };
 
-  const handleClose = () => { setFormData({ fullName:'', email:'', position:'' }); setErrors({}); setSuccessData(null); onClose(); };
+  const handleClose = () => { setFormData({ fullName:'', email:'', position:'', title:'', gender:'' }); setErrors({}); setSuccessData(null); setSelectedCandidateId(''); onClose(); };
+  
+  // Close suggestions on Escape
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (ev) => { if (ev.key === 'Escape') setSuggestOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen]);
 
   useEffect(()=>{ if(isOpen){ const o=document.body.style.overflow; document.body.style.overflow='hidden'; return ()=>{ document.body.style.overflow=o; }; } },[isOpen]);
   if(!isOpen) return null;
@@ -86,7 +156,11 @@ export default function CreateLecturerModal({ isOpen, onClose, onLecturerCreated
                     type="button"
                     onClick={()=>{ navigator.clipboard.writeText(successData.tempPassword); toast.success('Copied'); }}
                     className="px-2 py-1 text-xs rounded border bg-white hover:bg-gray-100"
-                  >Copy</button>
+                    title="Copy temp password"
+                    aria-label="Copy temp password"
+                  >
+                    <Clipboard className="w-4 h-4" />
+                  </button>
                 </div>
                 <p className="text-[10px] text-gray-500 mt-2">Masked for security. Use Copy to share privately.</p>
               </div>
@@ -96,30 +170,103 @@ export default function CreateLecturerModal({ isOpen, onClose, onLecturerCreated
             <form onSubmit={submit} className="space-y-4">
               <h2 className="text-xl font-semibold">Add Lecturer</h2>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-                <input 
-                  name="fullName" 
-                  value={formData.fullName} 
-                  onChange={handleChange} 
-                  className={`w-full px-3 py-2 border rounded-md bg-white text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.fullName?'border-red-500':'border-gray-300'}`} 
-                  placeholder="Dr. John Smith or Prof. Jane Doe" 
+                <label className="block text-sm font-medium text-gray-700 mb-1">Candidate</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={candidateQuery}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setCandidateQuery(v);
+                      setSelectedCandidateId('');
+                      setSuggestOpen(true);
+                      if (searchTimer) clearTimeout(searchTimer);
+                      const t = setTimeout(() => { searchAcceptedCandidates(v); }, 300);
+                      setSearchTimer(t);
+                    }}
+                    onFocus={() => { if (candidateQuery.trim()) setSuggestOpen(true); }}
+                    placeholder="Type to search accepted candidates..."
+                    className="w-full px-3 py-2 border rounded-md bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300"
+                    aria-autocomplete="list"
+                    aria-expanded={suggestOpen}
+                    aria-owns="candidate-suggestions"
+                  />
+                  {suggestOpen && (
+                    <div id="candidate-suggestions" className="absolute z-20 mt-1 w-full max-h-60 overflow-auto bg-white border border-gray-200 rounded-md shadow-lg">
+                      {suggestLoading && (
+                        <div className="px-3 py-2 text-sm text-gray-500">Searching…</div>
+                      )}
+                      {!suggestLoading && acceptedCandidates.length === 0 && candidateQuery.trim() && (
+                        <div className="px-3 py-2 text-sm text-gray-500">No matches</div>
+                      )}
+                      {!suggestLoading && acceptedCandidates.map(c => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => onSelectCandidate(c)}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50"
+                        >
+                          {c.fullName}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <p className="text-xs text-gray-500 mt-1">Selecting a candidate auto-fills name and position. Candidate will be marked as done on success.</p>
+              </div>
+              {/* Title */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Title</label>
+                <div className={`inline-flex rounded-md overflow-hidden border ${errors.title ? 'border-red-500' : 'border-gray-300'}`}>
+                  {[
+                    { key: 'Mr', label: 'Mr.' },
+                    { key: 'Ms', label: 'Ms.' },
+                    { key: 'Mrs', label: 'Mrs.' },
+                    { key: 'Dr', label: 'Dr.' },
+                    { key: 'Prof', label: 'Prof.' }
+                  ].map(t => (
+                    <button
+                      key={t.key}
+                      type="button"
+                      onClick={() => { setFormData(p => ({ ...p, title: t.key })); if (errors.title) setErrors(e => ({ ...e, title: null })); }}
+                      className={`px-3 py-1.5 text-sm ${formData.title===t.key ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+                    >{t.label}</button>
+                  ))}
+                </div>
+                {errors.title && <p className="text-xs text-red-600 mt-1">{errors.title}</p>}
+              </div>
+              {/* Gender */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Gender</label>
+                <div className="inline-flex rounded-md overflow-hidden border border-gray-300">
+                  {['male','female','other'].map(g => (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => { setFormData(p => ({ ...p, gender: g })); if (errors.gender) setErrors(e => ({ ...e, gender: null })); }}
+                      className={`px-3 py-1.5 text-sm capitalize ${formData.gender===g ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+                    >{g}</button>
+                  ))}
+                </div>
+                {errors.gender && <p className="text-xs text-red-600 mt-1">{errors.gender}</p>}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Position</label>
+                <input
+                  name="position"
+                  value={formData.position}
+                  onChange={handleChange}
+                  readOnly={!!selectedCandidateId}
+                  className={`w-full px-3 py-2 border rounded-md bg-white text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.position?'border-red-500':'border-gray-300'} ${selectedCandidateId ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                  placeholder="Auto-filled from candidate"
                 />
-                {errors.fullName && <p className="text-xs text-red-600 mt-1">{errors.fullName}</p>}
-                <p className="text-xs text-gray-500 mt-1">English letters only. Include titles like Dr., Prof., Mr., Mrs. if applicable.</p>
+                {errors.position && <p className="text-xs text-red-600 mt-1">{errors.position}</p>}
+                {selectedCandidateId && <p className="text-xs text-gray-500 mt-1">Position is auto-filled from the selected candidate.</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
                 <input name="email" type="email" value={formData.email} onChange={handleChange} className={`w-full px-3 py-2 border rounded-md bg-white text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.email?'border-red-500':'border-gray-300'}`} placeholder="name@cadt.edu.kh" />
                 {errors.email && <p className="text-xs text-red-600 mt-1">{errors.email}</p>}
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Position</label>
-                <select name="position" value={formData.position} onChange={handleChange} className={`w-full px-3 py-2 border rounded-md bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.position?'border-red-500':'border-gray-300'}`}>
-                  <option value="">Select Position</option>
-                  <option value="Lecturer">Lecturer</option>
-                  <option value="Teaching Assistant (TA)">Teaching Assistant (TA)</option>
-                </select>
-                {errors.position && <p className="text-xs text-red-600 mt-1">{errors.position}</p>}
               </div>
               <div className="pt-2">
                 <button type="submit" disabled={isSubmitting} className="w-full bg-blue-600 text-white py-2 rounded-md flex items-center justify-center">

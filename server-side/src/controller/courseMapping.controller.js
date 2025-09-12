@@ -17,11 +17,13 @@ async function resolveDeptId(req) {
 
 export const listCourseMappings = async (req, res) => {
   try {
-    const academicYear = (req.query.academic_year || '').trim();
+  const academicYear = (req.query.academic_year || '').trim();
+  const statusFilter = (req.query.status || '').trim();
     const deptId = await resolveDeptId(req);
     const where = {};
-    if (deptId) where.dept_id = deptId;
-    if (academicYear) where.academic_year = academicYear;
+  if (deptId) where.dept_id = deptId;
+  if (academicYear) where.academic_year = academicYear;
+  if (statusFilter) where.status = statusFilter;
 
     // Pagination params (default 10 per page for infinite scroll)
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
@@ -40,24 +42,39 @@ export const listCourseMappings = async (req, res) => {
       offset
     });
 
-    const data = rows.map(r => ({
-      id: r.id,
-      class_id: r.class_id,
-      course_id: r.course_id,
-      lecturer_profile_id: r.lecturer_profile_id,
-      academic_year: r.academic_year,
-      term: r.term,
-      year_level: r.year_level,
-      group_count: r.group_count,
-      type_hours: r.type_hours,
-      availability: r.availability,
-      status: r.status,
-      contacted_by: r.contacted_by,
-      comment: r.comment,
-      class: r.Class ? { id: r.Class.id, name: r.Class.name, term: r.Class.term, year_level: r.Class.year_level, academic_year: r.Class.academic_year, total_class: r.Class.total_class } : null,
-      course: r.Course ? { id: r.Course.id, code: r.Course.course_code, name: r.Course.course_name, hours: r.Course.hours, credits: r.Course.credits } : null,
-      lecturer: r.LecturerProfile ? { id: r.LecturerProfile.id, name: r.LecturerProfile.full_name_english || r.LecturerProfile.full_name_khmer } : null
-    }));
+    const data = rows.map(r => {
+      // Prefer new fields when present; fall back to legacy type_hours/group_count
+      const thGroups = Number.isFinite(r.theory_groups) ? r.theory_groups : null;
+      const lbGroups = Number.isFinite(r.lab_groups) ? r.lab_groups : null;
+      const type = String(r.type_hours || '').toLowerCase();
+      const isTheoryLegacy = type.includes('theory') || type.includes('15h');
+      const isLabLegacy = type.includes('lab') || type.includes('30h');
+      const theory_groups = thGroups != null ? thGroups : (isTheoryLegacy ? (r.group_count || 0) : 0);
+      const lab_groups = lbGroups != null ? lbGroups : (isLabLegacy ? (r.group_count || 0) : 0);
+  return {
+        id: r.id,
+        class_id: r.class_id,
+        course_id: r.course_id,
+        lecturer_profile_id: r.lecturer_profile_id,
+        academic_year: r.academic_year,
+        term: r.term,
+        year_level: r.year_level,
+        group_count: r.group_count,
+        type_hours: r.type_hours,
+        theory_hours: r.theory_hours || (isTheoryLegacy ? (r.type_hours?.includes('15h') ? '15h' : '30h') : null),
+  theory_groups,
+  theory_15h_combined: r.theory_15h_combined,
+        lab_hours: r.lab_hours || (isLabLegacy ? '30h' : null),
+        lab_groups,
+        availability: r.availability,
+        status: r.status,
+        contacted_by: r.contacted_by,
+        comment: r.comment,
+        class: r.Class ? { id: r.Class.id, name: r.Class.name, term: r.Class.term, year_level: r.Class.year_level, academic_year: r.Class.academic_year, total_class: r.Class.total_class } : null,
+        course: r.Course ? { id: r.Course.id, code: r.Course.course_code, name: r.Course.course_name, hours: r.Course.hours, credits: r.Course.credits } : null,
+        lecturer: r.LecturerProfile ? { id: r.LecturerProfile.id, name: r.LecturerProfile.full_name_english || r.LecturerProfile.full_name_khmer } : null
+      };
+    });
 
     const totalPages = Math.ceil(count / limit) || 1;
     const hasMore = page < totalPages;
@@ -70,7 +87,7 @@ export const listCourseMappings = async (req, res) => {
 
 export const createCourseMapping = async (req, res) => {
   try {
-    const { class_id, course_id, lecturer_profile_id, academic_year, term, year_level, group_count, type_hours, availability, status, contacted_by, comment } = req.body;
+  const { class_id, course_id, lecturer_profile_id, academic_year, term, year_level, group_count, type_hours, availability, status, contacted_by, comment, theory_hours, theory_groups, lab_hours, lab_groups, theory_15h_combined } = req.body;
     console.log('[createCourseMapping] incoming', req.body);
     if (!class_id || !course_id || !academic_year || !term) {
       return res.status(400).json({ message: 'class_id, course_id, academic_year, term required' });
@@ -85,7 +102,56 @@ export const createCourseMapping = async (req, res) => {
     }
     const course = await Course.findByPk(parsedCourseId);
     if (!course) return res.status(400).json({ message: 'Invalid course_id (Course not found)' });
+    // Validate dual fields (new) with backward compatibility
+    let thGroupsIn = parseInt(theory_groups, 10);
+    let lbGroupsIn = parseInt(lab_groups, 10);
+    if (!Number.isFinite(thGroupsIn) || thGroupsIn < 0) thGroupsIn = 0;
+    if (!Number.isFinite(lbGroupsIn) || lbGroupsIn < 0) lbGroupsIn = 0;
+    const theorySelected = thGroupsIn > 0 || (typeof theory_hours === 'string' && theory_hours.trim());
+    const labSelected = lbGroupsIn > 0 || (typeof lab_hours === 'string' && lab_hours.trim());
+    if (!theorySelected && !labSelected) {
+      // fallback to legacy fields if provided
+      let typeValueLegacy = String(type_hours || '').trim();
+      if (/only\s*15h/i.test(typeValueLegacy)) typeValueLegacy = 'Theory (15h)';
+      if (/only\s*30h/i.test(typeValueLegacy)) typeValueLegacy = 'Lab (30h)';
+      if (!['Theory (15h)','Lab (30h)'].includes(typeValueLegacy)) {
+        return res.status(400).json({ message: 'Select Theory and/or Lab with group counts' });
+      }
+      // derive new fields from legacy
+      const legacyGroups = Math.max(1, parseInt(group_count, 10) || 1);
+      if (typeValueLegacy.includes('Theory')) { thGroupsIn = legacyGroups; }
+      else { lbGroupsIn = legacyGroups; }
+    }
+    // Normalize hours strings
+    let thHoursIn = null;
+    if (thGroupsIn > 0) {
+      const v = String(theory_hours || '').trim().toLowerCase();
+      thHoursIn = v === '30h' ? '30h' : '15h';
+    }
+    let lbHoursIn = null;
+    if (lbGroupsIn > 0) {
+      // Lab is fixed 30h
+      lbHoursIn = '30h';
+    }
+    // Sanitize strings
+    const contactedBySan = contacted_by ? String(contacted_by).slice(0,255) : null;
+    const commentSan = comment ? String(comment).slice(0, 1000) : null;
     const deptId = await resolveDeptId(req);
+    // Legacy compatibility fields
+    let legacyType = 'Theory (15h)';
+    let legacyGroups = 1;
+    if (thGroupsIn > 0 && lbGroupsIn === 0) {
+      legacyType = thHoursIn === '30h' ? 'Lab (30h)' : 'Theory (15h)'; // if theory 30h we still cannot represent; keep Theory (15h) vs Lab (30h) best-effort
+      legacyGroups = thGroupsIn;
+    } else if (lbGroupsIn > 0 && thGroupsIn === 0) {
+      legacyType = 'Lab (30h)';
+      legacyGroups = lbGroupsIn;
+    } else if (lbGroupsIn > 0 && thGroupsIn > 0) {
+      // both selected: pick theory-based label, groups from theory for legacy field
+      legacyType = thHoursIn === '30h' ? 'Lab (30h)' : 'Theory (15h)';
+      legacyGroups = thGroupsIn;
+    }
+
     const created = await CourseMapping.create({
       class_id,
       course_id: parsedCourseId,
@@ -93,12 +159,17 @@ export const createCourseMapping = async (req, res) => {
       academic_year,
       term,
       year_level: year_level || null,
-      group_count: group_count || 1,
-      type_hours: type_hours || 'Theory (15h)',
+      group_count: legacyGroups,
+      type_hours: legacyType,
+      theory_hours: thHoursIn,
+      theory_groups: thGroupsIn,
+      theory_15h_combined: !!theory_15h_combined,
+      lab_hours: lbHoursIn,
+      lab_groups: lbGroupsIn,
       availability: availability || null,
       status: status || 'Pending',
-      contacted_by: contacted_by || null,
-      comment: comment || null,
+      contacted_by: contactedBySan,
+      comment: commentSan,
       dept_id: deptId
     });
     return res.status(201).json({ id: created.id });
@@ -119,9 +190,57 @@ export const updateCourseMapping = async (req, res) => {
     if (!mapping) return res.status(404).json({ message: 'Mapping not found' });
     const deptId = await resolveDeptId(req);
     if (deptId && mapping.dept_id !== deptId) return res.status(403).json({ message: 'Access denied' });
-    const allowed = ['lecturer_profile_id','group_count','type_hours','availability','status','contacted_by','comment'];
+  const allowed = ['lecturer_profile_id','group_count','type_hours','availability','status','contacted_by','comment','theory_hours','theory_groups','lab_hours','lab_groups','theory_15h_combined'];
     const patch = {};
     for (const k of allowed) if (k in req.body) patch[k] = req.body[k];
+    if ('group_count' in patch) {
+      let groups = parseInt(patch.group_count, 10);
+      if (!Number.isFinite(groups) || groups < 1) groups = 1;
+      patch.group_count = groups;
+    }
+    if ('type_hours' in patch) {
+      let typeValue = String(patch.type_hours || '').trim();
+      if (/only\s*15h/i.test(typeValue)) typeValue = 'Theory (15h)';
+      if (/only\s*30h/i.test(typeValue)) typeValue = 'Lab (30h)';
+      if (!['Theory (15h)','Lab (30h)'].includes(typeValue)) {
+        typeValue = 'Theory (15h)';
+      }
+      patch.type_hours = typeValue;
+    }
+    // New fields sanitation
+    if ('theory_groups' in patch) {
+      let g = parseInt(patch.theory_groups, 10); if (!Number.isFinite(g) || g < 0) g = 0; patch.theory_groups = g;
+      if (g === 0) { patch.theory_hours = null; }
+      else if (!('theory_hours' in patch)) { patch.theory_hours = (mapping.theory_hours || '15h'); }
+      if (patch.theory_hours && !['15h','30h'].includes(String(patch.theory_hours).toLowerCase())) { patch.theory_hours = '15h'; }
+    }
+    if ('lab_groups' in patch) {
+      let g = parseInt(patch.lab_groups, 10); if (!Number.isFinite(g) || g < 0) g = 0; patch.lab_groups = g;
+      if (g === 0) { patch.lab_hours = null; } else { patch.lab_hours = '30h'; }
+    }
+    if ('contacted_by' in patch && patch.contacted_by != null) {
+      patch.contacted_by = String(patch.contacted_by).slice(0,255);
+    }
+    if ('comment' in patch && patch.comment != null) {
+      patch.comment = String(patch.comment).slice(0,1000);
+    }
+    // Keep legacy fields roughly in sync for compatibility
+    if ('theory_groups' in patch || 'lab_groups' in patch || 'theory_hours' in patch || 'lab_hours' in patch) {
+      const tGroups = 'theory_groups' in patch ? patch.theory_groups : (mapping.theory_groups || 0);
+      const lGroups = 'lab_groups' in patch ? patch.lab_groups : (mapping.lab_groups || 0);
+      const tHours = 'theory_hours' in patch ? patch.theory_hours : mapping.theory_hours;
+      if (tGroups > 0 && lGroups === 0) {
+        patch.type_hours = (tHours === '30h') ? 'Lab (30h)' : 'Theory (15h)';
+        patch.group_count = tGroups;
+      } else if (lGroups > 0 && tGroups === 0) {
+        patch.type_hours = 'Lab (30h)';
+        patch.group_count = lGroups;
+      } else if (lGroups > 0 && tGroups > 0) {
+        patch.type_hours = (tHours === '30h') ? 'Lab (30h)' : 'Theory (15h)';
+        patch.group_count = Math.max(tGroups, lGroups);
+      }
+    }
+
     await mapping.update(patch);
     return res.json({ message: 'Updated' });
   } catch (e) {

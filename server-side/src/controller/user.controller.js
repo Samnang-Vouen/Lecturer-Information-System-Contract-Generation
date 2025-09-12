@@ -228,6 +228,113 @@ export const createUser = async (req, res) => {
   }
 };
 
+/**
+ * Create a new lecturer from an accepted candidate
+ * @route POST /api/lecturers/from-candidate/:id
+ * @access Private (Admin only)
+ */
+export const createLecturerFromCandidate = async (req, res) => {
+  try {
+    const candId = parseInt(req.params.id, 10);
+    if (!candId) return res.status(400).json({ message: 'Invalid candidate id' });
+    const Candidate = (await import('../model/candidate.model.js')).default;
+    const cand = await Candidate.findByPk(candId);
+    if (!cand) return res.status(404).json({ message: 'Candidate not found' });
+    if (cand.status !== 'accepted') return res.status(400).json({ message: 'Candidate must be accepted before creating lecturer' });
+
+    // Determine department from admin creating this account
+    let department = req.user?.department_name;
+    if (!department) return res.status(400).json({ message: 'Admin department is not set' });
+
+    const role = 'lecturer';
+    const fullName = cand.fullName;
+    // Use admin-provided email, not candidate email; enforce CADT domain
+    const sanitizeCadtEmail = (val) => {
+      const raw = String(val || '').trim().toLowerCase();
+      const local = raw.split('@')[0].replace(/[^a-z0-9._%+-]/g, '');
+      return local ? `${local}@cadt.edu.kh` : '';
+    };
+    const providedEmail = sanitizeCadtEmail(req.body?.email);
+    if (!providedEmail) return res.status(400).json({ message: 'Valid CADT email is required' });
+    const email = providedEmail;
+    // Normalize candidate's applied position to accepted values; default to 'Lecturer'
+    const normalizePosition = (val) => {
+      const s = String(val || '').trim();
+      if (!s) return 'Lecturer';
+      const lower = s.toLowerCase();
+      // Map common variants to TA
+      if (/\b(teaching\s*assistant|assistant|\bta\b)\b/i.test(s)) return 'Teaching Assistant (TA)';
+      // Lecturer variants
+      if (/(lecturer|instructor|teacher)/i.test(s)) return 'Lecturer';
+      return 'Lecturer';
+    };
+    const position = normalizePosition(cand.positionAppliedFor);
+
+    // Prefer admin-provided title/gender; fallback to simple heuristics/null
+    let { title, gender } = req.body || {};
+    if (!title) title = null;
+    const nameLower = (fullName || '').toLowerCase();
+    if (/^prof(\.|\b)/i.test(fullName)) title = 'Prof';
+    else if (/^dr(\.|\b)/i.test(fullName)) title = 'Dr';
+    else if (/^mr(\.|\b)/i.test(fullName)) title = 'Mr';
+    else if (/^mrs(\.|\b)/i.test(fullName)) title = 'Mrs';
+    else if (/^ms(\.|\b)/i.test(fullName)) title = 'Ms';
+
+    await sequelize.transaction(async (t) => {
+      // Create or get role & department
+      const [roleRow] = await Role.findOrCreate({ where: { role_type: role }, defaults: { role_type: role }, transaction: t });
+      const [deptRow] = await Department.findOrCreate({ where: { dept_name: department }, defaults: { dept_name: department }, transaction: t });
+
+      // Ensure unique email
+      const existing = await User.findOne({ where: { email }, transaction: t });
+      if (existing) throw new Error('Email already exists for a user');
+
+      // Generate temp password
+      const TEMP_LEN = 10;
+      let tempPassword = '';
+      while (tempPassword.length < TEMP_LEN) tempPassword += Math.random().toString(36).slice(2);
+      tempPassword = tempPassword.slice(0, TEMP_LEN);
+      const passwordHash = await (await import('bcrypt')).default.hash(tempPassword, 10);
+
+      // Create user
+      const user = await User.create({ email, password_hash: passwordHash, display_name: fullName, department_name: deptRow.dept_name, status: 'active' }, { transaction: t });
+      await UserRole.create({ user_id: user.id, role_id: roleRow.id }, { transaction: t });
+
+      // Create LecturerProfile using candidate fields
+      const lecturer = await LecturerProfile.create({
+        user_id: user.id,
+        employee_id: `EMP${Date.now().toString().slice(-6)}`,
+        full_name_english: fullName,
+        position: position,
+        join_date: new Date(),
+        status: 'active',
+        cv_uploaded: false,
+        cv_file_path: '',
+        qualifications: '',
+        occupation: position,
+        phone_number: cand.phone || null,
+  personal_email: cand.email || null,
+  title: title,
+  gender: gender || null
+      }, { transaction: t });
+
+      // Link department
+      await DepartmentProfile.create({ dept_id: deptRow.id, profile_id: lecturer.id }, { transaction: t });
+
+      // Mark candidate as done
+      await cand.update({ status: 'done' }, { transaction: t });
+
+      res.status(201).json({ id: user.id, email: user.email, role: roleRow.role_type, department: deptRow.dept_name, tempPassword, profile: { employeeId: lecturer.employee_id, fullName: lecturer.full_name_english, position: lecturer.position }, candidateId: cand.id });
+    });
+  } catch (error) {
+    console.error('[createLecturerFromCandidate] error', error.message);
+    if ((error.message || '').includes('Email already exists')) {
+      return res.status(409).json({ message: 'Email already exists for another user' });
+    }
+    return res.status(500).json({ message: 'Failed to create lecturer from candidate', error: error.message });
+  }
+};
+
 export const updateUser = async (req, res) => {
   try {
     const { id } = req.params;

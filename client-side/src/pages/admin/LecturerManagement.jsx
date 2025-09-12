@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { useAuthStore } from '../../store/useAuthStore';
 import CreateLecturerModal from '../../components/CreateLecturerModal';
-import { Users, Plus, Search, MoreHorizontal, Edit3, UserX, UserCheck, X, Trash2, BookOpen, FileText, Loader2, Eye, Download, Upload } from 'lucide-react';
+import { Users, Plus, Search, MoreHorizontal, Edit3, UserX, UserCheck, X, Trash2, BookOpen, FileText, Loader2, Eye, Download, Upload, Clipboard } from 'lucide-react';
 import { axiosInstance } from '../../lib/axios';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../../components/ui/Card';
 import Input from '../../components/ui/Input';
@@ -18,6 +18,83 @@ import toast from 'react-hot-toast';
 import AssignCoursesDialog from '../../components/AssignCoursesDialog';
 
 export default function LecturerManagement(){
+  // Extract first non-empty bio string from various possible API shapes
+  const extractBio = React.useCallback((rawObj) => {
+    try {
+      const candidates = [
+        rawObj,
+        rawObj?.data,
+        rawObj?.profile,
+        rawObj?.lecturer_profile,
+        rawObj?.data?.profile,
+      ];
+      const keys = ['qualifications','bio','about_me','short_bio','description','about','summary'];
+      for (const container of candidates) {
+        if (!container) continue;
+        for (const k of keys) {
+          const v = container[k];
+          if (v !== undefined && v !== null) {
+            const s = String(v).trim();
+            if (s) return s;
+          }
+        }
+      }
+      // Deep scan fallback: search nested objects for likely bio-like fields
+      const seen = new Set();
+      const matchKey = (k) => /bio|qualif|about|summary|desc/i.test(String(k));
+      const dfs = (obj, depth=0) => {
+        if (!obj || typeof obj !== 'object' || depth > 4 || seen.has(obj)) return '';
+        seen.add(obj);
+        if (Array.isArray(obj)) {
+          for (const item of obj) {
+            const r = dfs(item, depth+1);
+            if (r) return r;
+          }
+          return '';
+        }
+        for (const [k,v] of Object.entries(obj)) {
+          try {
+            if (matchKey(k) && (typeof v === 'string' || typeof v === 'number')) {
+              const s = String(v).trim();
+              if (s) return s;
+            }
+            if (v && typeof v === 'object') {
+              const r = dfs(v, depth+1);
+              if (r) return r;
+            }
+          } catch {}
+        }
+        return '';
+      };
+      const deep = dfs(rawObj);
+      if (deep) return deep;
+    } catch {}
+    return '';
+  }, []);
+  // Helper to compute server base (protocol+host[:port]) from axios baseURL for building file URLs
+  const serverBase = React.useMemo(() => {
+    try {
+      const b = axiosInstance?.defaults?.baseURL || '';
+      if (typeof b === 'string' && b.startsWith('http')) {
+        // strip trailing /api or /api/... if present
+        const url = new URL(b);
+        const origin = `${url.protocol}//${url.host}`;
+        if (b.replace(origin, '').startsWith('/api')) {
+          return origin;
+        }
+        return origin;
+      }
+    } catch {}
+    // Fallback to swapping dev client port to API port
+    try { return window.location.origin.replace(/:\d+$/, ':4000'); } catch { return 'http://localhost:4000'; }
+  }, []);
+
+  const fileUrl = React.useCallback((p) => {
+    if (!p) return null;
+    if (/^https?:\/\//i.test(p)) return p; // already absolute
+    const path = p.startsWith('uploads/') ? p : `uploads/${p.replace(/^\/?/, '')}`;
+    return `${serverBase}/${path}`;
+  }, [serverBase]);
   const { logout } = useAuthStore();
   const [searchParams, setSearchParams] = useSearchParams();
   const [lecturers, setLecturers] = useState([]);
@@ -29,7 +106,11 @@ export default function LecturerManagement(){
   const [createdLecturers, setCreatedLecturers] = useState([]); // session-created list
   const [openMenuId, setOpenMenuId] = useState(null);
   const [menuCoords, setMenuCoords] = useState({ x:0, y:0, dropUp:false });
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  // Popover for remaining courses (+N)
+  const [coursesPopover, setCoursesPopover] = useState(null); // { id, items, x, y, dropUp }
+  // Unified profile dialog (used for both Edit and View/read-only)
+  const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false);
+  const [dialogReadonly, setDialogReadonly] = useState(false);
   const [selectedLecturer, setSelectedLecturer] = useState(null); // enriched detail object
   const [editTab, setEditTab] = useState('basic');
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -45,7 +126,6 @@ export default function LecturerManagement(){
   const [coursesCatalog, setCoursesCatalog] = useState([]);
   const [selectedCourses, setSelectedCourses] = useState([]); // course_code list for dialog
   const [assignLoading, setAssignLoading] = useState(false);
-  const [profileDrawer, setProfileDrawer] = useState({ open:false, lecturer:null, loading:false, detail:null, activeTab:'overview', saving:false });
 
   // small helper to render initials for avatar circles
     // avatar initials removed — names will display without avatar
@@ -144,6 +224,23 @@ export default function LecturerManagement(){
   };
   const closeMenu=()=> setOpenMenuId(null);
 
+  const openCoursesPopover = (lecturer, e)=>{
+    // compute anchor position similar to actions menu
+    const rect = e.currentTarget.getBoundingClientRect();
+    const menuHeight = 240;
+    const gap = 8;
+    const shouldDropUp = (rect.bottom + menuHeight + gap) > window.innerHeight;
+    const dropUp = shouldDropUp;
+    const y = dropUp ? Math.max(rect.top - menuHeight - gap, gap) : Math.min(rect.bottom + gap, Math.max(window.innerHeight - menuHeight - gap, gap));
+    const width = 260;
+    const rawX = rect.right - width;
+    const x = Math.min(Math.max(rawX, gap), Math.max(window.innerWidth - width - gap, gap));
+    const items = (lecturer.courses || []).slice(3);
+    if(!items.length){ setCoursesPopover(null); return; }
+    setCoursesPopover({ id: lecturer.id, items, x, y, dropUp });
+  };
+  const closeCoursesPopover = ()=> setCoursesPopover(null);
+
   const requestDelete = (lecturer)=>{ setLecturerToDelete(lecturer); setIsDeleteModalOpen(true); closeMenu(); };
   const cancelDelete=()=>{ setIsDeleteModalOpen(false); setLecturerToDelete(null); };
   const confirmDelete= async ()=>{ if(!lecturerToDelete) return; try{ await axiosInstance.delete(`/lecturers/${lecturerToDelete.id}`); setLecturers(prev=> prev.filter(l=> l.id!==lecturerToDelete.id)); }catch(e){ console.error('Delete lecturer failed', e);} finally { cancelDelete(); } };
@@ -153,12 +250,11 @@ export default function LecturerManagement(){
   const openEdit = async (lecturer)=>{
     closeMenu();
     try {
-      // fetch detail to enrich
       const res = await axiosInstance.get(`/lecturers/${lecturer.id}/detail`);
       const raw = res.data || {};
-      // some APIs return payload under .data or nested profile object
       const detail = raw.data || raw.profile || raw.lecturer_profile || raw || {};
       const get = (k, alt) => detail[k] ?? raw[k] ?? raw.data?.[k] ?? raw.profile?.[k] ?? raw.lecturer_profile?.[k] ?? alt;
+  const prefilledBio = get('short_bio') || extractBio(raw);
       const enriched = {
         id: lecturer.id,
         name: lecturer.name || get('name',''),
@@ -166,11 +262,10 @@ export default function LecturerManagement(){
         department: lecturer.department || get('department',''),
         position: lecturer.position || get('position','Lecturer'),
         status: lecturer.status || get('status','active'),
-  occupation: get('occupation','') || '',
-  place: get('place','') || '',
+        occupation: get('occupation','') || '',
+        place: get('place','') || '',
         phone: get('phone') || get('phone_number') || '',
-        bio: get('qualifications',''),
-        // normalize research fields
+        bio: prefilledBio,
         specialization: get('researchFields') || get('research_fields') || lecturer.researchFields || [],
         education: get('education') || [],
         experience: get('experience') || [],
@@ -178,17 +273,58 @@ export default function LecturerManagement(){
         cvFilePath: get('cvFilePath') || get('cv_file_path') || '',
         syllabusUploaded: get('syllabusUploaded') || false,
         syllabusFilePath: get('syllabusFilePath') || get('syllabus_file_path') || '',
-        // bank/payroll (many possible keys)
         bank_name: get('bank_name','') || get('bankName',''),
         account_name: get('account_name','') || get('accountName',''),
         account_number: get('account_number','') || get('accountNumber',''),
         payrollFilePath: get('payrollFilePath') || get('payroll_file_path') || get('payroll_path') || get('payrollPath') || get('pay_roll_in_riel') || '',
-        // candidate linkage for hourly rate editing
         candidateId: get('candidateId', null),
-        hourlyRateThisYear: get('hourlyRateThisYear', '') || ''
+  hourlyRateThisYear: (get('hourlyRateThisYear', '')) ?? ''
       };
       setSelectedLecturer(enriched);
-      setIsEditDialogOpen(true);
+      setDialogReadonly(false);
+      setIsProfileDialogOpen(true);
+      setEditTab('basic');
+    } catch(e){
+      toast.error('Failed to load lecturer');
+      console.error(e);
+    }
+  };
+
+  const openView = async (lecturer) => {
+    closeMenu();
+    try {
+      const res = await axiosInstance.get(`/lecturers/${lecturer.id}/detail`);
+      const raw = res.data || {};
+      const detail = raw.data || raw.profile || raw.lecturer_profile || raw || {};
+      const get = (k, alt) => detail[k] ?? raw[k] ?? raw.data?.[k] ?? raw.profile?.[k] ?? raw.lecturer_profile?.[k] ?? alt;
+  const prefilledBio = get('short_bio') || extractBio(raw);
+      const enriched = {
+        id: lecturer.id,
+        name: lecturer.name || get('name',''),
+        email: lecturer.email || get('email',''),
+        department: lecturer.department || get('department',''),
+        position: lecturer.position || get('position','Lecturer'),
+        status: lecturer.status || get('status','active'),
+        occupation: get('occupation','') || '',
+        place: get('place','') || '',
+        phone: get('phone') || get('phone_number') || '',
+        bio: prefilledBio,
+        specialization: get('researchFields') || get('research_fields') || lecturer.researchFields || [],
+        education: get('education') || [],
+        experience: get('experience') || [],
+        cvUploaded: get('cvUploaded') || false,
+        cvFilePath: get('cvFilePath') || get('cv_file_path') || '',
+        syllabusUploaded: get('syllabusUploaded') || false,
+        syllabusFilePath: get('syllabusFilePath') || get('syllabus_file_path') || '',
+        bank_name: get('bank_name','') || get('bankName',''),
+        account_name: get('account_name','') || get('accountName',''),
+  account_number: get('account_number','') || get('accountNumber',''),
+  payrollFilePath: get('payrollFilePath') || get('payroll_file_path') || get('payroll_path') || get('payrollPath') || get('pay_roll_in_riel') || '',
+  hourlyRateThisYear: (get('hourlyRateThisYear', '')) ?? ''
+      };
+      setSelectedLecturer(enriched);
+      setDialogReadonly(true);
+      setIsProfileDialogOpen(true);
       setEditTab('basic');
     } catch(e){
       toast.error('Failed to load lecturer');
@@ -199,14 +335,14 @@ export default function LecturerManagement(){
   const saveEditProfile = async ()=> {
     if(!selectedLecturer) return;
     try {
-      // Save bio (qualifications) & research_fields
+      // Save bio (short_bio) & research_fields
   await axiosInstance.patch(`/lecturers/${selectedLecturer.id}/profile`, {
-    qualifications: selectedLecturer.bio || '',
-  research_fields: selectedLecturer.specialization.join(','),
-  phone_number: selectedLecturer.phone || null,
-  bank_name: selectedLecturer.bank_name || null,
-  account_name: selectedLecturer.account_name || null,
-  account_number: selectedLecturer.account_number || null
+    short_bio: selectedLecturer.bio || '',
+    research_fields: selectedLecturer.specialization.join(','),
+    phone_number: selectedLecturer.phone || null,
+    bank_name: selectedLecturer.bank_name || null,
+    account_name: selectedLecturer.account_name || null,
+    account_number: selectedLecturer.account_number || null
   });
       // Optionally update status/position via update user endpoint
       await axiosInstance.put(`/lecturers/${selectedLecturer.id}`, {
@@ -233,8 +369,8 @@ export default function LecturerManagement(){
         const get = (k, alt) => raw[k] ?? raw.data?.[k] ?? raw.profile?.[k] ?? alt;
         setSelectedLecturer(p=> ({ ...p, candidateId: get('candidateId', p.candidateId), hourlyRateThisYear: get('hourlyRateThisYear', p.hourlyRateThisYear) }));
       } catch {}
-      toast.success('Profile updated');
-      setIsEditDialogOpen(false);
+  toast.success('Profile updated');
+  setIsProfileDialogOpen(false);
     } catch(e){
       console.error(e);
       toast.error('Save failed');
@@ -251,14 +387,7 @@ export default function LecturerManagement(){
         // expect server to return updated path under several possible keys
         const newPath = res.data.path || res.data.payrollFilePath || res.data.profile?.pay_roll_in_riel || res.data.profile?.payrollPath || res.data.pay_roll_in_riel;
         setSelectedLecturer(p=> ({ ...p, payrollFilePath: newPath || p.payrollFilePath, payrollUploaded: true }));
-        // if drawer open for same lecturer, update it too
-        setProfileDrawer(prev => {
-          if(!prev.open) return prev;
-          if(prev.lecturer && prev.lecturer.id === selectedLecturer.id){
-            return { ...prev, detail: { ...(prev.detail||{}), payrollFilePath: newPath || prev.detail?.payrollFilePath } };
-          }
-          return prev;
-        });
+  // updated selectedLecturer and dialog view already reflects it
         toast.dismiss(); toast.success('Payroll uploaded');
       }catch(e){ toast.dismiss(); toast.error(e.response?.data?.message || 'Upload failed'); console.error(e); }
     };
@@ -314,33 +443,27 @@ export default function LecturerManagement(){
 
   const cancelAssignment = ()=> { setAssigning(null); };
 
-  useEffect(()=>{ function onDocClick(e){ if(!e.target.closest('.lecturer-action-menu')) closeMenu(); } document.addEventListener('click', onDocClick); const onScrollOrResize=()=> closeMenu(); window.addEventListener('scroll', onScrollOrResize,true); window.addEventListener('resize', onScrollOrResize); return ()=>{ document.removeEventListener('click', onDocClick); window.removeEventListener('scroll', onScrollOrResize,true); window.removeEventListener('resize', onScrollOrResize); }; },[]);
-  useEffect(()=>{ if(isEditDialogOpen){ const o=document.body.style.overflow; document.body.style.overflow='hidden'; return ()=>{ document.body.style.overflow=o; }; } },[isEditDialogOpen]);
+  useEffect(()=>{ 
+    function onDocClick(e){ 
+      if(!e.target.closest('.lecturer-action-menu')) closeMenu(); 
+      if(!e.target.closest('.courses-popover') && !e.target.closest('.courses-plus-chip')) closeCoursesPopover();
+    } 
+    document.addEventListener('click', onDocClick);
+    const onKey = (e)=>{ if(e.key === 'Escape') { closeCoursesPopover(); closeMenu(); } };
+    window.addEventListener('keydown', onKey);
+    const onScrollOrResize=()=>{ closeMenu(); closeCoursesPopover(); };
+    window.addEventListener('scroll', onScrollOrResize,true); 
+    window.addEventListener('resize', onScrollOrResize); 
+    return ()=>{ 
+      document.removeEventListener('click', onDocClick); 
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('scroll', onScrollOrResize,true); 
+      window.removeEventListener('resize', onScrollOrResize); 
+    }; 
+  },[]);
+  useEffect(()=>{ if(isProfileDialogOpen){ const o=document.body.style.overflow; document.body.style.overflow='hidden'; return ()=>{ document.body.style.overflow=o; }; } },[isProfileDialogOpen]);
 
-  // When profile drawer opens, fetch fresh detail (including bank/payroll) for display
-  useEffect(()=>{
-    const loadDetail = async ()=>{
-      if(!profileDrawer.open || !profileDrawer.lecturer) return;
-      try{
-        setProfileDrawer(p=> ({ ...p, loading:true }));
-        const res = await axiosInstance.get(`/lecturers/${profileDrawer.lecturer.id}/detail`);
-        const d = res.data || {};
-        const merged = {
-          ...d,
-          bank_name: d.bank_name || d.bankName || '',
-          account_name: d.account_name || d.accountName || '',
-          account_number: d.account_number || d.accountNumber || '',
-          // Support multiple possible keys returned from server
-          payrollFilePath: d.payrollFilePath || d.payroll_file_path || d.payrollPath || d.pay_roll_in_riel || ''
-        };
-        setProfileDrawer(p=> ({ ...p, loading:false, detail: merged }));
-      }catch(e){
-        console.error('Failed to load profile drawer detail', e);
-        setProfileDrawer(p=> ({ ...p, loading:false }));
-      }
-    };
-    loadDetail();
-  },[profileDrawer.open, profileDrawer.lecturer]);
+  // removed side drawer detail loader
 
   return <div className='p-8 space-y-6 bg-gray-50 min-h-screen'>
     <div className='flex flex-col gap-4'>
@@ -435,7 +558,10 @@ export default function LecturerManagement(){
                               onClick={()=> { navigator.clipboard.writeText(c.tempPassword); toast.success('Copied'); }}
                               className='px-2 py-0.5 text-[11px] rounded border bg-white hover:bg-gray-100'
                               title='Copy temp password'
-                            >Copy</button>
+                              aria-label='Copy temp password'
+                            >
+                              <Clipboard className='w-4 h-4'/>
+                            </button>
                           </div>
                         ) : '—'}
                       </td>
@@ -498,7 +624,11 @@ export default function LecturerManagement(){
                       <td className='px-6 py-4 whitespace-nowrap text-gray-600'>
                         <div className='flex flex-wrap gap-2'>
                           {l.courses && l.courses.length>0 ? l.courses.slice(0,3).map((c,i)=> <span key={i} className='px-3 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-xs font-semibold'>{c.course_name || c.name || c.courseCode || c.course_code || c}</span>) : <span className='text-xs text-gray-400'>—</span>}
-                          {l.courses && l.courses.length>3 && <span className='px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-xs font-semibold'>+{l.courses.length-3}</span>}
+                          {l.courses && l.courses.length>3 && (
+                            <button type='button' onClick={(e)=> openCoursesPopover(l,e)} className='courses-plus-chip px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-xs font-semibold hover:bg-indigo-200'>
+                              +{l.courses.length-3}
+                            </button>
+                          )}
                         </div>
                       </td>
                       <td className='px-6 py-4 whitespace-nowrap'>
@@ -536,23 +666,23 @@ export default function LecturerManagement(){
     setLecturers(prev=> [normalized, ...prev]); 
     setCreatedLecturers(prev=> [normalized, ...prev]); }}/>
 
-    <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-  <DialogContent className="max-w-5xl max-h-[95vh] w-full sm:w-auto overflow-y-auto">
+    <Dialog open={isProfileDialogOpen} onOpenChange={setIsProfileDialogOpen}>
+      <DialogContent className="max-w-5xl max-h-[95vh] w-full sm:w-auto overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Edit Lecturer Profile</DialogTitle>
-          <DialogDescription>Update lecturer information and upload documents</DialogDescription>
+          <DialogTitle>{dialogReadonly ? 'View Lecturer Profile' : 'Edit Lecturer Profile'}</DialogTitle>
+          <DialogDescription>{dialogReadonly ? 'Profile details' : 'Update lecturer information and upload documents'}</DialogDescription>
         </DialogHeader>
         {selectedLecturer && (
           <div className='space-y-6'>
             <Tabs value={editTab} onValueChange={setEditTab}>
-              <TabsList ariaLabel='Edit profile sections'>
+              <TabsList ariaLabel='Profile sections'>
                 <TabsTrigger value='basic' className='justify-start text-center whitespace-normal break-words min-w-0'>Basic Info</TabsTrigger>
                 <TabsTrigger value='bank' className='justify-start text-center whitespace-normal break-words min-w-0'>Bank Info</TabsTrigger>
                 <TabsTrigger value='education' className='justify-start text-center whitespace-normal break-words min-w-0'>Education</TabsTrigger>
                 <TabsTrigger value='work' className='justify-start text-center whitespace-normal break-words min-w-0'>Experience</TabsTrigger>
                 <TabsTrigger value='documents' className='justify-start text-center whitespace-normal break-words min-w-0'>Documents</TabsTrigger>
               </TabsList>
-        <TabsContent value='basic'>
+              <TabsContent value='basic'>
                 <div className='space-y-4'>
                   <div className='grid grid-cols-1 sm:grid-cols-2 gap-4'>
                     <div className='space-y-2'>
@@ -565,7 +695,7 @@ export default function LecturerManagement(){
                     </div>
                     <div className='space-y-2'>
                       <Label>Phone</Label>
-                      <Input value={selectedLecturer.phone} onChange={e=> setSelectedLecturer(p=> ({ ...p, phone: e.target.value }))} />
+                      <Input value={selectedLecturer.phone} onChange={e=> setSelectedLecturer(p=> ({ ...p, phone: e.target.value }))} readOnly={dialogReadonly} />
                     </div>
                     <div className='space-y-2'>
                       <Label>Department</Label>
@@ -573,31 +703,39 @@ export default function LecturerManagement(){
                     </div>
                     <div className='space-y-2'>
                       <Label>Position</Label>
-                      <Select value={selectedLecturer.position} onValueChange={val=> setSelectedLecturer(p=> ({ ...p, position: val }))}>
-                        <SelectItem value='Lecturer'>Lecturer</SelectItem>
-                        <SelectItem value='Teaching Assistant (TA)'>Teaching Assistant (TA)</SelectItem>
-                      </Select>
+                      {dialogReadonly ? (
+                        <Input value={selectedLecturer.position} readOnly />
+                      ) : (
+                        <Select value={selectedLecturer.position} onValueChange={val=> setSelectedLecturer(p=> ({ ...p, position: val }))}>
+                          <SelectItem value='Lecturer'>Lecturer</SelectItem>
+                          <SelectItem value='Teaching Assistant (TA)'>Teaching Assistant (TA)</SelectItem>
+                        </Select>
+                      )}
                     </div>
                     <div className='space-y-2'>
                       <Label>Hourly Rate This Year ($)</Label>
                       <Input type='number' step='0.01' placeholder='0.00' value={selectedLecturer.hourlyRateThisYear || ''} onChange={e=> {
                         const v = e.target.value;
                         setSelectedLecturer(p=> ({ ...p, hourlyRateThisYear: v }));
-                      }} />
+                      }} readOnly={dialogReadonly} />
                     </div>
                     <div className='space-y-2'>
                       <Label>Status</Label>
-                      <Select value={selectedLecturer.status} onValueChange={val=> setSelectedLecturer(p=> ({ ...p, status: val }))}>
-                        <SelectItem value='active'>Active</SelectItem>
-                        <SelectItem value='inactive'>Inactive</SelectItem>
-                        <SelectItem value='on-leave'>On Leave</SelectItem>
-                      </Select>
+                      {dialogReadonly ? (
+                        <Input value={selectedLecturer.status} readOnly />
+                      ) : (
+                        <Select value={selectedLecturer.status} onValueChange={val=> setSelectedLecturer(p=> ({ ...p, status: val }))}>
+                          <SelectItem value='active'>Active</SelectItem>
+                          <SelectItem value='inactive'>Inactive</SelectItem>
+                          <SelectItem value='on-leave'>On Leave</SelectItem>
+                        </Select>
+                      )}
                     </div>
                     <div />
                   </div>
                   <div className='space-y-2'>
                     <Label>Bio</Label>
-                    <Textarea rows={4} value={selectedLecturer.bio} onChange={e=> setSelectedLecturer(p=> ({ ...p, bio: e.target.value }))} />
+                    <Textarea rows={4} value={selectedLecturer.bio} onChange={e=> setSelectedLecturer(p=> ({ ...p, bio: e.target.value }))} readOnly={dialogReadonly} />
                   </div>
                   <div className='space-y-2'>
                     <Label>Research Field</Label>
@@ -635,20 +773,20 @@ export default function LecturerManagement(){
                   )) : <p className='text-gray-500 text-center py-8 text-sm'>No education records found</p>}
                 </div>
               </TabsContent>
-        <TabsContent value='bank'>
+              <TabsContent value='bank'>
                 <div className='space-y-4'>
-          <div className='grid grid-cols-1 sm:grid-cols-2 gap-4'>
+                  <div className='grid grid-cols-1 sm:grid-cols-2 gap-4'>
                     <div className='space-y-2'>
                       <Label>Bank Name</Label>
-                      <Input value={selectedLecturer.bank_name || selectedLecturer.bankName || ''} onChange={e=> setSelectedLecturer(p=> ({ ...p, bank_name: e.target.value }))} />
+                      <Input value={selectedLecturer.bank_name || selectedLecturer.bankName || ''} onChange={e=> setSelectedLecturer(p=> ({ ...p, bank_name: e.target.value }))} readOnly={dialogReadonly} />
                     </div>
                     <div className='space-y-2'>
                       <Label>Account Name</Label>
-                      <Input value={selectedLecturer.account_name || selectedLecturer.accountName || ''} onChange={e=> setSelectedLecturer(p=> ({ ...p, account_name: e.target.value }))} />
+                      <Input value={selectedLecturer.account_name || selectedLecturer.accountName || ''} onChange={e=> setSelectedLecturer(p=> ({ ...p, account_name: e.target.value }))} readOnly={dialogReadonly} />
                     </div>
                     <div className='space-y-2'>
                       <Label>Account Number</Label>
-                      <Input value={selectedLecturer.account_number || selectedLecturer.accountNumber || ''} onChange={e=> setSelectedLecturer(p=> ({ ...p, account_number: e.target.value }))} />
+                      <Input value={selectedLecturer.account_number || selectedLecturer.accountNumber || ''} onChange={e=> setSelectedLecturer(p=> ({ ...p, account_number: e.target.value }))} readOnly={dialogReadonly} />
                     </div>
                   </div>
                   <div>
@@ -657,10 +795,8 @@ export default function LecturerManagement(){
                       {selectedLecturer.payrollFilePath || selectedLecturer.payrollUploaded ? (
                         <div className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-4 border rounded-lg'>
                           <div className='flex items-center gap-4 flex-1 min-w-0'>
-                            {/* show thumbnail if image or file icon otherwise */}
                             {selectedLecturer.payrollFilePath ? (()=>{
-                              const path = selectedLecturer.payrollFilePath.startsWith('uploads/')? selectedLecturer.payrollFilePath : `uploads/${selectedLecturer.payrollFilePath.replace(/^\/?/, '')}`;
-                              const url = `${window.location.origin.replace(/:\d+$/,':4000')}/${path}`;
+                              const url = fileUrl(selectedLecturer.payrollFilePath);
                               const isPdf = String(url).toLowerCase().endsWith('.pdf');
                               if(isPdf){
                                 return (
@@ -690,10 +826,8 @@ export default function LecturerManagement(){
                           </div>
                           <div className='flex flex-wrap gap-2 w-full sm:w-auto sm:justify-end'>
                             {selectedLecturer.payrollFilePath && (()=>{
-                              const path = selectedLecturer.payrollFilePath.startsWith('uploads/')? selectedLecturer.payrollFilePath : `uploads/${selectedLecturer.payrollFilePath.replace(/^\/?/, '')}`;
-                              const url = `${window.location.origin.replace(/:\d+$/,':4000')}/${path}`;
+                              const url = fileUrl(selectedLecturer.payrollFilePath);
                               return <>
-                                {/* For PDFs, preview in new tab; images will open too */}
                                 <a href={url} target='_blank' rel='noreferrer' className='inline-flex items-center px-3 py-1.5 text-xs rounded border hover:bg-gray-50 whitespace-nowrap'><Eye className='w-4 h-4 mr-1'/> Preview</a>
                                 <a href={url} download className='inline-flex items-center px-3 py-1.5 text-xs rounded border hover:bg-gray-50 whitespace-nowrap'><Download className='w-4 h-4 mr-1'/> Download</a>
                               </>;
@@ -705,13 +839,15 @@ export default function LecturerManagement(){
                           <p className='text-gray-600 text-sm'>No payroll uploaded</p>
                         </div>
                       )}
-                      <div className='flex items-center gap-4 mt-3'>
-                        <input type='file' accept='image/*,.pdf' onChange={e=> e.target.files?.[0] && handlePayrollUpload(e.target.files[0])} className='hidden' id='payroll-upload'/>
-                        <Label htmlFor='payroll-upload' className='cursor-pointer'>
-                          <span className='inline-flex items-center px-3 py-2 text-xs rounded border bg-white hover:bg-gray-50'><Upload className='w-4 h-4 mr-1'/> Upload Payroll</span>
-                        </Label>
-                        <p className='text-xs text-gray-600'>Image or PDF, max 10MB</p>
-                      </div>
+                      {!dialogReadonly && (
+                        <div className='flex items-center gap-4 mt-3'>
+                          <input type='file' accept='image/*,.pdf' onChange={e=> e.target.files?.[0] && handlePayrollUpload(e.target.files[0])} className='hidden' id='payroll-upload'/>
+                          <Label htmlFor='payroll-upload' className='cursor-pointer'>
+                            <span className='inline-flex items-center px-3 py-2 text-xs rounded border bg-white hover:bg-gray-50'><Upload className='w-4 h-4 mr-1'/> Upload Payroll</span>
+                          </Label>
+                          <p className='text-xs text-gray-600'>Image or PDF, max 10MB</p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -753,7 +889,7 @@ export default function LecturerManagement(){
                             </div>
                           </div>
                           <div className='flex flex-wrap gap-2 w-full sm:w-auto sm:justify-end'>
-                            {selectedLecturer.cvFilePath && (()=>{ const path = selectedLecturer.cvFilePath.startsWith('uploads/')? selectedLecturer.cvFilePath : `uploads/${selectedLecturer.cvFilePath.replace(/^\/?/, '')}`; const url = `${window.location.origin.replace(/:\d+$/,':4000')}/${path}`; return <>
+                            {selectedLecturer.cvFilePath && (()=>{ const url = fileUrl(selectedLecturer.cvFilePath); return <>
                               <a href={url} target='_blank' rel='noreferrer' className='inline-flex items-center px-3 py-1.5 text-xs rounded border hover:bg-gray-50 whitespace-nowrap'><Eye className='w-4 h-4 mr-1'/> Preview</a>
                               <a href={url} download className='inline-flex items-center px-3 py-1.5 text-xs rounded border hover:bg-gray-50 whitespace-nowrap'><Download className='w-4 h-4 mr-1'/> Download</a>
                             </>; })()}
@@ -765,13 +901,15 @@ export default function LecturerManagement(){
                           <p className='text-gray-600 text-sm'>No CV uploaded</p>
                         </div>
                       )}
-                      <div className='flex items-center gap-4'>
-                        <input type='file' accept='.pdf' onChange={e=> e.target.files?.[0] && handleFileUpload(e.target.files[0])} className='hidden' id='cv-upload'/>
-                        <Label htmlFor='cv-upload' className='cursor-pointer'>
-                          <span className='inline-flex items-center px-3 py-2 text-xs rounded border bg-white hover:bg-gray-50'><Upload className='w-4 h-4 mr-1'/> Upload New CV</span>
-                        </Label>
-                        <p className='text-xs text-gray-600'>PDF only, max 10MB</p>
-                      </div>
+                      {!dialogReadonly && (
+                        <div className='flex items-center gap-4'>
+                          <input type='file' accept='.pdf' onChange={e=> e.target.files?.[0] && handleFileUpload(e.target.files[0])} className='hidden' id='cv-upload'/>
+                          <Label htmlFor='cv-upload' className='cursor-pointer'>
+                            <span className='inline-flex items-center px-3 py-2 text-xs rounded border bg-white hover:bg-gray-50'><Upload className='w-4 h-4 mr-1'/> Upload New CV</span>
+                          </Label>
+                          <p className='text-xs text-gray-600'>PDF only, max 10MB</p>
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div>
@@ -787,7 +925,7 @@ export default function LecturerManagement(){
                             </div>
                           </div>
                           <div className='flex flex-wrap gap-2 w-full sm:w-auto sm:justify-end'>
-                            {selectedLecturer.syllabusFilePath && (()=>{ const path = selectedLecturer.syllabusFilePath.startsWith('uploads/')? selectedLecturer.syllabusFilePath : `uploads/${selectedLecturer.syllabusFilePath.replace(/^\/?/,'')}`; const url = `${window.location.origin.replace(/:\d+$/,':4000')}/${path}`; return <>
+                            {selectedLecturer.syllabusFilePath && (()=>{ const url = fileUrl(selectedLecturer.syllabusFilePath); return <>
                               <a href={url} target='_blank' rel='noreferrer' className='inline-flex items-center px-3 py-1.5 text-xs rounded border hover:bg-gray-50 whitespace-nowrap'><Eye className='w-4 h-4 mr-1'/> Preview</a>
                               <a href={url} download className='inline-flex items-center px-3 py-1.5 text-xs rounded border hover:bg-gray-50 whitespace-nowrap'><Download className='w-4 h-4 mr-1'/> Download</a>
                             </>; })()}
@@ -805,13 +943,41 @@ export default function LecturerManagement(){
               </TabsContent>
             </Tabs>
             <div className='flex justify-end gap-3 border-t pt-4'>
-              <Button variant='outline' onClick={()=> setIsEditDialogOpen(false)}>Cancel</Button>
-              <Button onClick={saveEditProfile}>Save Changes</Button>
+              <Button variant='outline' onClick={()=> setIsProfileDialogOpen(false)}>{dialogReadonly ? 'Close' : 'Cancel'}</Button>
+              {!dialogReadonly && <Button onClick={saveEditProfile}>Save Changes</Button>}
             </div>
           </div>
         )}
       </DialogContent>
     </Dialog>
+
+    {coursesPopover && (()=>{
+      const items = coursesPopover.items || [];
+      return (
+        <div className='fixed z-40 courses-popover' style={{ top: coursesPopover.y, left: coursesPopover.x }}>
+          <div className='w-72 max-h-72 overflow-auto bg-white border border-gray-200 rounded-lg shadow-xl ring-1 ring-black/5'>
+            <div className='sticky top-0 z-10 flex items-center justify-between px-3 py-2 bg-white/95 backdrop-blur border-b'>
+              <div className='text-[11px] font-semibold tracking-wide text-gray-600'>More Courses <span className='ml-1 text-gray-400'>({items.length})</span></div>
+              <button onClick={closeCoursesPopover} className='p-1 rounded hover:bg-gray-100 text-gray-500' aria-label='Close'>
+                <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='currentColor' className='w-4 h-4'>
+                  <path fillRule='evenodd' d='M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z' clipRule='evenodd' />
+                </svg>
+              </button>
+            </div>
+            <ul className='py-2'>
+              {items.map((c,idx)=>{
+                const label = c.course_name || c.name || c.courseCode || c.course_code || String(c);
+                return (
+                  <li key={idx} className='px-3 py-2 text-[13px] leading-snug text-gray-800 hover:bg-gray-50 border-b last:border-b-0'>
+                    {label}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </div>
+      );
+    })()}
 
     {isDeleteModalOpen && ReactDOM.createPortal(<div className='fixed inset-0 z-50'>
       <div className='absolute inset-0 bg-black/50' onClick={cancelDelete} />
@@ -830,8 +996,9 @@ export default function LecturerManagement(){
       </div>
     </div>, document.body)}
 
-    {openMenuId && (()=>{ const l= lecturers.find(x=> x.id===openMenuId); if(!l) return null; return <div className='fixed z-50 lecturer-action-menu' style={{ top: menuCoords.y, left: menuCoords.x }}>
+  {openMenuId && (()=>{ const l= lecturers.find(x=> x.id===openMenuId); if(!l) return null; return <div className='fixed z-50 lecturer-action-menu' style={{ top: menuCoords.y, left: menuCoords.x }}>
       <div className='w-44 bg-white border border-gray-200 rounded-md shadow-lg py-2 text-sm'>
+        <button onClick={()=> openView(l)} className='w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-left'><Eye className='w-4 h-4'/> View</button>
         <button onClick={()=> openEdit(l)} className='w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-left'><Edit3 className='w-4 h-4'/> Edit</button>
         <button onClick={()=> openAssign(l)} className='w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-left'><BookOpen className='w-4 h-4'/> Courses</button>
         <button onClick={()=> handleDeactivate(l)} className='w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-left'>{l.status==='active'? (<><UserX className='w-4 h-4'/> Deactivate</>):(<><UserCheck className='w-4 h-4'/> Activate</> )}</button>
@@ -849,119 +1016,6 @@ export default function LecturerManagement(){
       onCancel={cancelAssignment}
       className={assigning?.name}
     />
-    {assigning && assignLoading && <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/30'><div className='flex items-center gap-3 bg-white px-6 py-4 rounded shadow'><Loader2 className='w-5 h-5 animate-spin text-blue-600'/><span className='text-sm text-gray-700'>Loading courses...</span></div></div>}
-    {profileDrawer.open && ReactDOM.createPortal(<div className='fixed inset-0 z-50 flex'>
-      <div className='flex-1 bg-black/40' onClick={()=> setProfileDrawer({ open:false, lecturer:null, loading:false, detail:null, activeTab:'overview', saving:false })} />
-      <div className='w-full max-w-lg bg-white h-full shadow-xl overflow-hidden flex flex-col'>
-        <div className='flex items-center justify-between px-5 py-4 border-b'>
-          <div>
-            <h2 className='text-lg font-semibold text-gray-900'>Lecturer Profile</h2>
-            <p className='text-xs text-gray-500'>{profileDrawer.lecturer?.email}</p>
-          </div>
-          <button onClick={()=> setProfileDrawer({ open:false, lecturer:null, loading:false, detail:null, activeTab:'overview', saving:false })} className='text-gray-400 hover:text-gray-600'><X className='w-5 h-5'/></button>
-        </div>
-        <div className='flex border-b text-sm'>
-          {['overview','bank','specialization','documents'].map(tab=> <button key={tab} onClick={()=> setProfileDrawer(p=> ({ ...p, activeTab:tab }))} className={`px-4 py-2 -mb-px border-b-2 ${profileDrawer.activeTab===tab? 'border-blue-600 text-blue-600 font-medium':'border-transparent text-gray-500 hover:text-gray-700'}`}>{tab==='overview'?'Overview':tab==='specialization'?'Research Fields':tab==='bank'?'Bank Info':'Documents'}</button>)}
-        </div>
-        <div className='flex-1 overflow-y-auto p-5 text-sm relative'>
-          {profileDrawer.loading && <div className='absolute inset-0 flex items-center justify-center bg-white/60'><Loader2 className='w-6 h-6 animate-spin text-blue-600'/></div>}
-          {!profileDrawer.loading && profileDrawer.detail && (
-            <>
-              {profileDrawer.activeTab==='overview' && <div className='space-y-4'>
-                <div>
-                  <p className='text-xs font-semibold text-gray-500 mb-1'>Name</p>
-                  <p className='text-gray-800 font-medium'>{profileDrawer.detail.name}</p>
-                </div>
-                <div>
-                  <p className='text-xs font-semibold text-gray-500 mb-1'>Departments</p>
-                  <div className='flex flex-wrap gap-2'>{(profileDrawer.detail.departments||[]).map(d=> <span key={d.id} className='px-2 py-0.5 text-xs rounded bg-gray-100 text-gray-700'>{d.name}</span>)}</div>
-                </div>
-                <div>
-                  <p className='text-xs font-semibold text-gray-500 mb-1'>Courses Count</p>
-                  <p>{profileDrawer.detail.coursesCount}</p>
-                </div>
-                <div>
-                  <p className='text-xs font-semibold text-gray-500 mb-1'>Qualifications</p>
-                  <textarea className='w-full border rounded p-2 h-24 text-xs' value={profileDrawer.detail.qualifications||''} onChange={e=> setProfileDrawer(p=> ({ ...p, detail:{ ...p.detail, qualifications:e.target.value } }))} />
-                </div>
-              </div>}
-              {profileDrawer.activeTab==='bank' && <div className='space-y-4'>
-                <div>
-                  <p className='text-xs font-semibold text-gray-500 mb-1'>Bank Name</p>
-                  <p className='text-gray-800 font-medium'>{profileDrawer.detail.bank_name || profileDrawer.detail.bankName || '—'}</p>
-                </div>
-                <div>
-                  <p className='text-xs font-semibold text-gray-500 mb-1'>Account Name</p>
-                  <p className='text-gray-800 font-medium'>{profileDrawer.detail.account_name || profileDrawer.detail.accountName || '—'}</p>
-                </div>
-                <div>
-                  <p className='text-xs font-semibold text-gray-500 mb-1'>Account Number</p>
-                  <p className='text-gray-800 font-medium'>{profileDrawer.detail.account_number || profileDrawer.detail.accountNumber || '—'}</p>
-                </div>
-                <div>
-                  <p className='text-xs font-semibold text-gray-500 mb-1'>Payroll Document</p>
-                  {profileDrawer.detail.payrollFilePath ? (()=>{
-                    const path = profileDrawer.detail.payrollFilePath.startsWith('uploads/')? profileDrawer.detail.payrollFilePath : `uploads/${profileDrawer.detail.payrollFilePath.replace(/^\/?/, '')}`;
-                    const url = `${window.location.origin.replace(/:\d+$/,':4000')}/${path}`;
-                    const isPdf = String(url).toLowerCase().endsWith('.pdf');
-                    if(isPdf){
-                      return (
-                        <div className='flex items-center gap-4'>
-                          <div className='w-28 h-20 flex items-center justify-center rounded-md border bg-gray-50'>
-                            <FileText className='w-10 h-10 text-red-600'/>
-                          </div>
-                          <div className='flex gap-2'>
-                            <a href={url} target='_blank' rel='noreferrer' className='inline-flex items-center px-3 py-1.5 text-xs rounded border hover:bg-gray-50'><Eye className='w-4 h-4 mr-1'/> Preview</a>
-                            <a href={url} download className='inline-flex items-center px-3 py-1.5 text-xs rounded border hover:bg-gray-50'><Download className='w-4 h-4 mr-1'/> Download</a>
-                          </div>
-                        </div>
-                      );
-                    }
-                    return (
-                      <div className='flex items-center gap-4'>
-                        <img src={url} alt='Payroll' className='w-28 h-20 object-cover rounded-md border' />
-                        <div className='flex gap-2'>
-                          <a href={url} target='_blank' rel='noreferrer' className='inline-flex items-center px-3 py-1.5 text-xs rounded border hover:bg-gray-50'><Eye className='w-4 h-4 mr-1'/> Preview</a>
-                          <a href={url} download className='inline-flex items-center px-3 py-1.5 text-xs rounded border hover:bg-gray-50'><Download className='w-4 h-4 mr-1'/> Download</a>
-                        </div>
-                      </div>
-                    );
-                  })() : <div className='text-sm text-gray-500'>No payroll uploaded</div>}
-                </div>
-              </div>}
-              {profileDrawer.activeTab==='specialization' && <div className='space-y-4'>
-                <p className='text-xs font-semibold text-gray-500'>Research / Specialization Tags</p>
-                <div className='flex flex-wrap gap-2'>{(profileDrawer.detail.researchFields||[]).map((tag,i)=> <span key={i} className='px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-xs'>{tag}</span>)}
-                  {!profileDrawer.detail.researchFields?.length && <span className='text-gray-400 text-xs italic'>None</span>}
-                </div>
-                <textarea placeholder='Comma separated tags e.g. AI, Data Mining, Cloud' className='w-full border rounded p-2 h-28 text-xs' value={profileDrawer.detail.research_fields||''} onChange={e=> setProfileDrawer(p=> ({ ...p, detail:{ ...p.detail, research_fields:e.target.value } }))} />
-              </div>}
-              {profileDrawer.activeTab==='documents' && <div className='space-y-4'>
-                <p className='text-xs font-semibold text-gray-500'>Documents</p>
-                <div className='space-y-2'>
-                  <div className='flex items-center justify-between p-2 border rounded'>
-                    <div className='flex items-center gap-2 text-xs'><FileText className='w-4 h-4 text-gray-500'/> CV</div>
-                    {profileDrawer.detail.cvUploaded ? <a href={`/${profileDrawer.detail.cvFilePath}`} target='_blank' rel='noreferrer' className='text-blue-600 hover:underline text-xs'>Open</a> : <span className='text-gray-400 text-xs'>Not uploaded</span>}
-                  </div>
-                  <div className='flex items-center justify-between p-2 border rounded'>
-                    <div className='flex items-center gap-2 text-xs'><FileText className='w-4 h-4 text-gray-500'/> Syllabus</div>
-                    {profileDrawer.detail.syllabusUploaded ? <a href={`/${profileDrawer.detail.syllabusFilePath}`} target='_blank' rel='noreferrer' className='text-blue-600 hover:underline text-xs'>Open</a> : <span className='text-gray-400 text-xs'>Not uploaded</span>}
-                  </div>
-                </div>
-              </div>}
-            </>
-          )}
-        </div>
-        <div className='border-t p-4 flex justify-between items-center'>
-          <span className='text-xs text-gray-500'>Changes are not auto-saved</span>
-          <div className='flex gap-2'>
-            <button onClick={()=> setProfileDrawer({ open:false, lecturer:null, loading:false, detail:null, activeTab:'overview', saving:false })} className='px-3 py-1.5 text-xs rounded border text-gray-600 hover:bg-gray-50'>Close</button>
-            <button disabled={profileDrawer.saving || profileDrawer.loading} onClick={async ()=> { if(!profileDrawer.detail) return; try { setProfileDrawer(p=> ({ ...p, saving:true })); await axiosInstance.patch(`/lecturers/${profileDrawer.lecturer.id}/profile`, { qualifications: profileDrawer.detail.qualifications||'', research_fields: profileDrawer.detail.research_fields||'' }); toast.success('Profile saved'); // update list specializations if changed
-              if(profileDrawer.detail.research_fields){ const tags = profileDrawer.detail.research_fields.split(',').map(s=> s.trim()).filter(Boolean).slice(0,5); setLecturers(prev=> prev.map(l=> l.id===profileDrawer.lecturer.id? { ...l, specializations: tags }: l)); }
-              setProfileDrawer(p=> ({ ...p, saving:false })); } catch(e){ toast.error('Save failed'); console.error(e); setProfileDrawer(p=> ({ ...p, saving:false })); } }} className='px-3 py-1.5 text-xs rounded bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-1'>{profileDrawer.saving && <Loader2 className='w-3 h-3 animate-spin'/>} Save</button>
-          </div>
-        </div>
-      </div>
-    </div>, document.body)}
+  {assigning && assignLoading && <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/30'><div className='flex items-center gap-3 bg-white px-6 py-4 rounded shadow'><Loader2 className='w-5 h-5 animate-spin text-blue-600'/><span className='text-sm text-gray-700'>Loading courses...</span></div></div>}
   </div>;
 }

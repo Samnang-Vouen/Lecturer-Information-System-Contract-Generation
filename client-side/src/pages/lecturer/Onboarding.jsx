@@ -43,6 +43,20 @@ export default function Onboarding(){
     .split(/\s+/)
     .map(w=> w ? w[0].toUpperCase()+w.slice(1).toLowerCase() : '')
     .join(' ');
+  // Normalize title and compose "Title. Name"; avoid duplicating title if already present
+  const TITLE_MAP = useMemo(() => ({ Mr: 'Mr.', Ms: 'Ms.', Mrs: 'Mrs.', Dr: 'Dr.', Prof: 'Prof.' }), []);
+  const composeEnglishWithTitle = (rawTitle, rawName) => {
+    const name = toTitleCase(String(rawName || ''));
+    const t = rawTitle && TITLE_MAP[rawTitle] ? TITLE_MAP[rawTitle] : (rawTitle ? String(rawTitle).trim() : '');
+    if (!t) return name;
+    // If name already starts with the title (with or without dot), normalize to mapped form
+    const bare = String(rawTitle || '').replace(/\./g, '');
+    const re = new RegExp(`^\s*(${bare}|${bare}\.)\s+`, 'i');
+    if (re.test(name)) {
+      return name.replace(re, `${t} `).trim();
+    }
+    return `${t}${name ? ' ' + name : ''}`.trim();
+  };
   const { authUser } = useAuthStore();
   const { researchFields: researchFieldsAPI, createResearchField } = useResearchFields();
   const { universities } = useUniversities();
@@ -93,24 +107,56 @@ export default function Onboarding(){
     }
   },[authUser]);
 
+  // Prefill phone and personal email from candidate record for this lecturer
+  useEffect(()=>{
+    let cancelled = false;
+    (async()=>{
+      try{
+        // Only fetch if empty
+        const needsPhone = !formData.phoneNumber;
+        const needsEmail = !formData.personalEmail;
+        if(!needsPhone && !needsEmail) return;
+        const res = await axiosInstance.get('/lecturer-profile/me/candidate-contact');
+        if(cancelled) return;
+        const phone = res.data?.phone || '';
+        const email = res.data?.personalEmail || '';
+        setFormData(prev=> ({
+          ...prev,
+          phoneNumber: needsPhone && phone ? phone.replace(/^\+/,'') : prev.phoneNumber,
+          personalEmail: needsEmail && email ? email : prev.personalEmail
+        }));
+        if(needsPhone && phone){
+          const digitsOnly = String(phone || '').replace(/[^0-9+]/g, '');
+          const normalized = digitsOnly.startsWith('+') ? digitsOnly : `+${digitsOnly}`;
+          setPhoneE164(normalized);
+        }
+      } catch(e){ /* ignore if not found */ }
+    })();
+    return ()=>{ cancelled = true; };
+  },[formData.phoneNumber, formData.personalEmail]);
+
   // Prefill English Name from existing profile (if any) or auth user display/name/email slug; remain editable
   useEffect(()=>{
     if(formData.englishName) return; // don't overwrite if user started typing
     let cancelled = false;
     (async()=>{
+      let apiTitle;
       try {
         const res = await axiosInstance.get('/lecturer-profile/me');
         const p = res.data || {};
+        apiTitle = p.title;
         const name = p.full_name_english /* || p.full_name || p.user_display_name || p.display_name */;
         if(name && !cancelled){
-          setFormData(prev=> prev.englishName ? prev : { ...prev, englishName: toTitleCase(name) });
+          const composed = composeEnglishWithTitle(apiTitle, name);
+          setFormData(prev=> prev.englishName ? prev : { ...prev, englishName: composed });
           return;
         }
   } catch (e) { void e; /* ignore: likely profile not created yet */ }
       if(!cancelled){
         const fallback = authUser?.display_name || authUser?.name || (authUser?.email ? authUser.email.split('@')[0].replace(/[._-]/g,' ') : '');
         if(fallback){
-          setFormData(prev=> prev.englishName ? prev : { ...prev, englishName: toTitleCase(fallback) });
+          const composed = composeEnglishWithTitle(apiTitle, fallback);
+          setFormData(prev=> prev.englishName ? prev : { ...prev, englishName: composed });
         }
       }
     })();
@@ -177,7 +223,7 @@ export default function Onboarding(){
     if (!q) return [];
     return universities
       .map(u => u.name)
-      .filter(u => u.toLowerCase().includes(q))
+      .filter(u => u.toLowerCase().startsWith(q))
       .slice(0, 8);
   }, [formData.universityName, universities]);
   // If the input exactly matches a known university, hide suggestions
@@ -193,7 +239,7 @@ export default function Onboarding(){
     if (!q) return [];
     return majors
       .map(m => m.name)
-      .filter(m => m.toLowerCase().includes(q))
+  .filter(m => m.toLowerCase().startsWith(q))
       .slice(0, 8);
   }, [formData.majorName, majors]);
   
@@ -209,7 +255,7 @@ export default function Onboarding(){
   const countrySuggestions = useMemo(() => {
     const q = String(formData.country || '').trim().toLowerCase();
     if (!q) return [];
-    return countryList.filter(c => c.toLowerCase().includes(q)).slice(0, 8);
+  return countryList.filter(c => c.toLowerCase().startsWith(q)).slice(0, 8);
   }, [formData.country, countryList]);
   // If the input exactly matches a known country, hide suggestions
   const countryHasExactMatch = useMemo(() => {
@@ -276,14 +322,15 @@ export default function Onboarding(){
     updateForm('accountName', combined.replace(/(\d{4})(?=\d)/g, '$1 ').trim());
   };
   // Ensure account holder name is always uppercase on input and paste
+  const englishOnlyPattern = /[^A-Za-z\s]/g; // allow only English letters and spaces
+  const sanitizeEnglishUpper = (s = '') => String(s).toUpperCase().replace(englishOnlyPattern, '');
   const handleAccountHolderChange = (e) => {
-    const val = String(e.target.value || '').toUpperCase();
-    updateForm('accountHolderName', val);
+    updateForm('accountHolderName', sanitizeEnglishUpper(e.target.value));
   };
   const handleAccountHolderPaste = (e) => {
     const pasted = (e.clipboardData || window.clipboardData).getData('text') || '';
     e.preventDefault();
-    updateForm('accountHolderName', String(pasted).toUpperCase());
+    updateForm('accountHolderName', sanitizeEnglishUpper(pasted));
   };
   const handleFileUpload = (file, type) => {
     if (type === "syllabus") {
@@ -339,6 +386,118 @@ export default function Onboarding(){
   const handleSubmit = async () => {
     try {
       setIsSubmitting(true);
+      // Required-field validations per step (except Research Fields and Course Syllabus)
+      // Step 1: Basic info
+      if (!String(formData.englishName || '').trim()) {
+        toast.error('Please enter your English name');
+        setCurrentStep(1);
+        setIsSubmitting(false);
+        return;
+      }
+      if (!String(formData.khmerName || '').trim()) {
+        toast.error('Please enter your Khmer name');
+        setCurrentStep(1);
+        setIsSubmitting(false);
+        return;
+      }
+      if (!String(formData.accountHolderName || '').trim()) {
+        toast.error('Please enter the account holder name');
+        setCurrentStep(1);
+        setIsSubmitting(false);
+        return;
+      }
+      if (!String(formData.bankName || '').trim()) {
+        toast.error('Please select your bank');
+        setCurrentStep(1);
+        setIsSubmitting(false);
+        return;
+      }
+      if (!files.payrollFile) {
+        toast.error('Please upload your payroll document');
+        setCurrentStep(1);
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Step 2: Academic info
+      if (!formData.departments || formData.departments.length === 0) {
+        toast.error('Please select at least one department');
+        setCurrentStep(2);
+        setIsSubmitting(false);
+        return;
+      }
+      if (!formData.courses || formData.courses.length === 0) {
+        toast.error('Please select at least one course');
+        setCurrentStep(2);
+        setIsSubmitting(false);
+        return;
+      }
+      if (!String(formData.shortBio || '').trim()) {
+        toast.error('Please enter a short bio');
+        setCurrentStep(2);
+        setIsSubmitting(false);
+        return;
+      }
+      if (!files.updatedCvFile) {
+        toast.error('Please upload your updated CV');
+        setCurrentStep(2);
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Step 3: Education
+      if (!String(formData.universityName || '').trim()) {
+        toast.error('Please enter your university name');
+        setCurrentStep(3);
+        setIsSubmitting(false);
+        return;
+      }
+      if (!String(formData.country || '').trim()) {
+        toast.error('Please enter your country');
+        setCurrentStep(3);
+        setIsSubmitting(false);
+        return;
+      }
+      if (!String(formData.majorName || '').trim()) {
+        toast.error('Please enter your major');
+        setCurrentStep(3);
+        setIsSubmitting(false);
+        return;
+      }
+      if (!String(formData.graduationYear || '').trim()) {
+        toast.error('Please select your graduation year');
+        setCurrentStep(3);
+        setIsSubmitting(false);
+        return;
+      }
+      if (!String(formData.latestDegree || '').trim()) {
+        toast.error('Please select your latest degree');
+        setCurrentStep(3);
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Step 4: Professional
+      if (!String(formData.occupation || '').trim()) {
+        toast.error('Please enter your current occupation');
+        setCurrentStep(4);
+        setIsSubmitting(false);
+        return;
+      }
+      if (!String(formData.placeOfWork || '').trim()) {
+        toast.error('Please enter your place of work');
+        setCurrentStep(4);
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Step 5: Contact - phone validated below; ensure school email is present
+      if (!String(formData.schoolEmail || authUser?.email || '').trim()) {
+        toast.error('Missing school email');
+        setCurrentStep(5);
+        setIsSubmitting(false);
+        return;
+      }
       // Validate phone number using libphonenumber-js
       if (phoneE164) {
         const parsed = parsePhoneNumberFromString(phoneE164);
@@ -359,7 +518,7 @@ export default function Onboarding(){
         setIsSubmitting(false);
         return;
       }
-      // Validate personal email contains at least an '@'
+  // Validate personal email contains at least an '@'
       const personalEmail = String(formData.personalEmail || '').trim();
       if (!personalEmail || !personalEmail.includes('@')) {
         toast.error('Please enter a valid personal email (must include @)');
@@ -379,7 +538,8 @@ export default function Onboarding(){
       fd.append('country', formData.country || '');
       fd.append('major', formData.majorName || '');
       fd.append('degree_year', formData.graduationYear || '');
-      fd.append('latest_degree', formData.latestDegree || '');
+  // Map Associate to OTHER to satisfy backend ENUM
+  fd.append('latest_degree', formData.latestDegree === 'ASSOCIATE' ? 'OTHER' : (formData.latestDegree || ''));
       fd.append('occupation', formData.occupation || '');
       fd.append('place', formData.placeOfWork || '');
       fd.append('phone_number', phoneE164 || formData.phoneNumber || '');
@@ -469,6 +629,7 @@ export default function Onboarding(){
                   onChange={handleKhmerNameChange}
                   onPaste={handleKhmerNamePaste}
                   placeholder="ចាន់ ដារ៉ា"
+                  required
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
@@ -492,6 +653,7 @@ export default function Onboarding(){
                     value={formData.bankName}
                     readOnly
                     placeholder="Select a bank"
+                    required
                     className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white cursor-pointer"
                     onClick={() => setShowBankOptions(!showBankOptions)}
                   />
@@ -540,6 +702,9 @@ export default function Onboarding(){
                   onPaste={handleAccountHolderPaste}
                   placeholder="Enter account holder name as it appears on bank records"
                   required
+                  pattern="[A-Za-z\s]+"
+                  title="Use English letters and spaces only"
+                  inputMode="text"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
@@ -620,7 +785,7 @@ export default function Onboarding(){
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <label className="block text-sm font-semibold text-gray-700">Courses *</label>
-                    <span className="text-xs text-gray-500">Up to 2</span>
+                    <span className="text-xs text-gray-500">Multiple selection</span>
                   </div>
                   <CourseMultiSelect
                     selected={formData.courses}
@@ -650,7 +815,7 @@ export default function Onboarding(){
                 <p className="text-xs text-gray-500">{(formData.shortBio || '').length}/{SHORT_BIO_MAX} characters</p>
               </div>
               <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700">Research Fields *</label>
+                <label className="block text-sm font-semibold text-gray-700">Research Fields </label>
                 <div className="flex gap-2">
                   <div className="relative flex-1">
                     <Input
@@ -891,7 +1056,8 @@ export default function Onboarding(){
                       'BACHELOR': "Bachelor's Degree",
                       'MASTER': "Master's Degree", 
                       'PHD': "Ph.D.",
-                      'POSTDOC': "Post-Doctoral"
+                      'POSTDOC': "Post-Doctoral",
+                      'ASSOCIATE': "Associate Degree"
                     }[formData.latestDegree] : ''}
                     readOnly
                     placeholder="Select your highest degree"
@@ -910,9 +1076,10 @@ export default function Onboarding(){
                   </button>
                 </div>
                 {showDegreeOptions && (
-                  <div className="absolute top-full left-0 right-0 z-50 mt-1">
+                  <div className="absolute bottom-full left-0 right-0 z-50 mb-1">
                     <div className="grid grid-cols-2 gap-2 p-2 border border-gray-200 rounded-md bg-white shadow-lg">
                       {[
+                        { value: 'ASSOCIATE', label: "Associate Degree" },
                         { value: 'BACHELOR', label: "Bachelor's Degree" },
                         { value: 'MASTER', label: "Master's Degree" },
                         { value: 'PHD', label: "Ph.D." },
@@ -952,6 +1119,7 @@ export default function Onboarding(){
                   value={formData.occupation}
                   onChange={(e) => updateForm('occupation', e.target.value)}
                   placeholder="Enter your current occupation"
+                  required
                 />
               </div>
               <div className="space-y-2">
@@ -960,6 +1128,7 @@ export default function Onboarding(){
                   value={formData.placeOfWork}
                   onChange={(e) => updateForm('placeOfWork', e.target.value)}
                   placeholder="Enter your workplace"
+                  required
                 />
               </div>
             </div>
@@ -1028,17 +1197,17 @@ export default function Onboarding(){
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    <div className="min-h-screen bg-gray-50 p-4 sm:p-6 lg:p-8">
       <div className="max-w-4xl mx-auto">
-        <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-blue-800 mb-2">
+        <div className="text-center mb-6 sm:mb-8">
+            <h1 className="text-2xl sm:text-3xl font-bold text-blue-800 mb-2">
             Welcome to the University!
           </h1>
           <p className="text-blue-600">Please complete your profile to get started</p>
         </div>
 
         {/* Progress Bar */}
-        <div className="mb-8">
+        <div className="mb-6 sm:mb-8">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium text-blue-700">
               Step {currentStep} of {steps.length}
@@ -1056,13 +1225,13 @@ export default function Onboarding(){
         </div>
 
         {/* Step Navigation */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between">
+        <div className="mb-6 sm:mb-8">
+          <div className="flex items-center justify-between overflow-x-auto gap-4 sm:gap-0 -mx-3 px-3 sm:mx-0 sm:px-0">
             {steps.map((step, index) => (
-              <div key={step.id} className="flex items-center">
+              <div key={step.id} className="flex items-center min-w-[140px] sm:min-w-0">
                 <div className="flex flex-col items-center">
                   <div
-                    className={`flex items-center justify-center w-10 h-10 rounded-full border-2 transition-all duration-300 ${
+                    className={`flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-full border-2 transition-all duration-300 ${
                       currentStep === step.id 
                         ? 'bg-blue-600 border-blue-600 text-white' 
                         : currentStep > step.id
@@ -1070,7 +1239,7 @@ export default function Onboarding(){
                         : 'border-blue-300 text-blue-400 bg-white'
                     }`}
                   >
-                    {React.createElement(step.icon, { className: "h-5 w-5" })}
+                    {React.createElement(step.icon, { className: "h-4 w-4 sm:h-5 sm:w-5" })}
                   </div>
                   <div className="mt-2 text-center">
                     <p className={`text-sm font-medium ${
@@ -1082,7 +1251,7 @@ export default function Onboarding(){
                   </div>
                 </div>
                 {index < steps.length - 1 && (
-                  <div className="flex-1 mx-4">
+                  <div className="hidden sm:block flex-1 mx-4">
                     <div className={`h-0.5 transition-colors duration-300 ${
                       currentStep > step.id ? 'bg-blue-300' : 'bg-blue-200'
                     }`}></div>
@@ -1094,7 +1263,7 @@ export default function Onboarding(){
         </div>
 
         {/* Step Content */}
-        <div className="bg-white rounded-lg border border-gray-200 p-8 mb-8">
+        <div className="bg-white rounded-lg border border-gray-200 p-4 sm:p-6 md:p-8 mb-6 sm:mb-8">
           <div className="mb-6">
             <h2 className="text-xl font-semibold text-blue-800 flex items-center mb-2">
               {React.createElement(steps[currentStep - 1].icon, { className: "h-5 w-5 mr-2" })}
@@ -1106,12 +1275,12 @@ export default function Onboarding(){
         </div>
 
         {/* Navigation Buttons */}
-        <div className="flex justify-between items-center">
+        <div className="flex flex-col-reverse sm:flex-row justify-between items-stretch sm:items-center gap-3">
           <Button 
             variant="outline" 
             onClick={handlePrevious} 
             disabled={currentStep === 1}
-            className="px-4 py-2 border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed rounded-md flex items-center"
+            className="w-full sm:w-auto px-4 py-2 border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed rounded-md flex items-center focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
           >
             <ChevronLeft className="h-4 w-4 mr-1" />Previous
           </Button>
@@ -1119,7 +1288,7 @@ export default function Onboarding(){
             <Button 
               onClick={handleSubmit} 
               disabled={isSubmitting}
-              className="px-6 py-2 bg-black text-white hover:bg-gray-800 rounded-md flex items-center disabled:opacity-50"
+              className="w-full sm:w-auto px-6 py-2 bg-black text-white hover:bg-gray-800 rounded-md flex items-center disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
             >
               {isSubmitting ? (
                 <span className="flex items-center">Submitting...</span>
@@ -1130,7 +1299,7 @@ export default function Onboarding(){
           ) : (
             <Button 
               onClick={handleNext}
-              className="px-6 py-2 bg-black text-white hover:bg-gray-800 rounded-md flex items-center"
+              className="w-full sm:w-auto px-6 py-2 bg-black text-white hover:bg-gray-800 rounded-md flex items-center focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
             >
               Next <ChevronRight className="h-4 w-4 ml-1" />
             </Button>
@@ -1166,16 +1335,12 @@ function CourseMultiSelect({ options, selected, onChange }) {
       onChange(selected.filter(c=>c!==course));
       return;
     }
-    if(selected.length >= 2){
-      toast.error('Maximum 2 courses');
-      return;
-    }
     onChange([...selected, course]);
   };
 
   const filtered = options.filter(o=> o.toLowerCase().includes(query.toLowerCase()));
 
-  const buttonLabel = selected.length ? selected.join(', ') : 'Select up to 2 courses';
+  const buttonLabel = selected.length ? selected.join(', ') : 'Select courses';
 
   return (
     <div className="relative" ref={containerRef}>
@@ -1205,14 +1370,12 @@ function CourseMultiSelect({ options, selected, onChange }) {
           <div className="max-h-56 overflow-auto pr-1 space-y-1">
             {filtered.map(o=>{
               const active = selected.includes(o);
-              const disabled = !active && selected.length >= 2; // prevent choosing more
               return (
                 <button
                   type="button"
                   key={o}
-                  disabled={disabled}
                   onClick={()=>toggle(o)}
-                  className={`w-full text-left px-2 py-1 rounded text-xs md:text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${active? 'bg-blue-600 text-white':'hover:bg-gray-100 text-gray-700'}`}
+                  className={`w-full text-left px-2 py-1 rounded text-xs md:text-sm transition-colors ${active? 'bg-blue-600 text-white':'hover:bg-gray-100 text-gray-700'}`}
                 >
                   {o}
                   {active && <span className="ml-1">✓</span>}
@@ -1222,7 +1385,7 @@ function CourseMultiSelect({ options, selected, onChange }) {
             {filtered.length===0 && <div className="text-xs text-gray-500 px-2 py-2">No courses</div>}
           </div>
           <div className="flex justify-between items-center px-1 pt-1 border-t border-gray-100">
-            <span className="text-[11px] text-gray-500">{selected.length}/2 selected</span>
+            <span className="text-[11px] text-gray-500">{selected.length} selected</span>
             {selected.length>0 && (
               <button type="button" onClick={()=>onChange([])} className="text-[11px] text-red-600 hover:underline">Clear all</button>
             )}
