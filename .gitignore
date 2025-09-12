@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+client-side/node_modules/
+server-side/node_modules/
+
+# Build outputs
+/dist/
+/build/
+client-side/dist/
+client-side/.vite/
+client-side/.cache/
+server-side/dist/
+
+# Environment files
+.env
+.env.*
+server-side/.env
+server-side/.env.*
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# VS Code settings
+.vscode/
+
+# Coverage and reports
+coverage/
+*.lcov
+
+# Uploads and generated assets
+server-side/uploads/
+
+# Temporary files
+*.tmp
+*.swp
+*.swo
