@@ -3,7 +3,8 @@ import { Plus, AlertCircle } from 'lucide-react';
 import ClassesTable from "../../components/ClassesTable";
 import ClassFormDialog from "../../components/ClassFormDialog";
 import AssignCoursesDialog from "../../components/AssignCoursesDialog";
-import axios from "../../lib/axios";
+import axiosInstance from "../../lib/axios";
+import { useAuthStore } from "../../store/useAuthStore";
 // UI primitives (custom implementations use default exports only)
 import Button from "../../components/ui/Button";
 import Label from "../../components/ui/Label";
@@ -20,6 +21,7 @@ const initialClassState = {
 };
 
 export default function ClassesManagement() {
+  const authUser = useAuthStore((s) => s.authUser);
   const [classes, setClasses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -40,6 +42,12 @@ export default function ClassesManagement() {
   const [assigningClass, setAssigningClass] = useState(null);
   const [selectedCourses, setSelectedCourses] = useState([]);
   const [availableCourses, setAvailableCourses] = useState([]);
+  // Selection and export states
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
+  const [exportUrl, setExportUrl] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [previewMode, setPreviewMode] = useState(false);
 
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
@@ -60,7 +68,7 @@ export default function ClassesManagement() {
     setLoading(true);
     try {
       const targetPage = reset ? 1 : page;
-      const res = await axios.get(`/classes?page=${targetPage}&limit=${limit}`);
+      const res = await axiosInstance.get(`/classes?page=${targetPage}&limit=${limit}`);
       const payload = res.data;
       if (Array.isArray(payload)) {
         // legacy non-paginated shape
@@ -104,7 +112,7 @@ export default function ClassesManagement() {
 
   // Fetch course catalog
   useEffect(() => {
-    axios.get('/courses')
+    axiosInstance.get('/courses')
       .then(res => {
         const payload = res.data;
         const list = Array.isArray(payload) ? payload : (Array.isArray(payload.data) ? payload.data : []);
@@ -170,7 +178,7 @@ export default function ClassesManagement() {
     // Include selected courses in the payload
     payload.courses = selectedCourses;
 
-    axios.post("/classes", payload)
+    axiosInstance.post("/classes", payload)
       .then(res => {
         setClasses(prev => [...prev, res.data]);
         setIsAddDialogOpen(false);
@@ -225,7 +233,7 @@ export default function ClassesManagement() {
     // Include selected courses in the payload
     payload.courses = selectedCourses;
 
-    axios.put(`/classes/${editingClass.id}`, payload)
+    axiosInstance.put(`/classes/${editingClass.id}`, payload)
       .then(res => {
         setClasses(prev => prev.map(c => c.id === editingClass.id ? res.data : c));
         setIsEditDialogOpen(false);
@@ -255,7 +263,7 @@ export default function ClassesManagement() {
     if (!classToDelete) return;
     setDeleting(true);
     try {
-      await axios.delete(`/classes/${classToDelete.id}`);
+      await axiosInstance.delete(`/classes/${classToDelete.id}`);
       setClasses(prev => prev.filter(c => c.id !== classToDelete.id));
       setError("");
       setIsConfirmDeleteOpen(false);
@@ -277,7 +285,7 @@ export default function ClassesManagement() {
       : classItem;
     setAssigningClass(target);
     setSelectedCourses(Array.isArray(target.courses) ? target.courses : []);
-    axios.get('/courses')
+    axiosInstance.get('/courses')
       .then(res => {
         const payload = res.data;
         const list = Array.isArray(payload) ? payload : (Array.isArray(payload.data) ? payload.data : []);
@@ -299,7 +307,7 @@ export default function ClassesManagement() {
       return;
     }
     setLoading(true);
-    axios.put(`/classes/${assigningClass.id}/courses`, { courses: selectedCourses })
+    axiosInstance.put(`/classes/${assigningClass.id}/courses`, { courses: selectedCourses })
       .then(() => {
         setClasses(prev => prev.map(c => c.id === assigningClass.id ? { ...c, courses: selectedCourses } : c));
         setIsCourseAssignDialogOpen(false);

@@ -4,7 +4,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '.
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../../components/ui/Dialog';
-import { Search, FileText, Eye, PenTool, Download, Clock, CheckCircle2, AlertCircle } from 'lucide-react';
+import { FileText, Eye, PenTool, Download, Clock, CheckCircle2, AlertCircle } from 'lucide-react';
 import { axiosInstance } from '../../lib/axios';
 
 export default function LecturerContracts(){
@@ -176,14 +176,8 @@ export default function LecturerContracts(){
         </CardHeader>
         <CardContent>
           <div className="rounded-xl border bg-white shadow-sm overflow-x-auto">
-            <div className="px-4 py-3 border-b flex items-center gap-2">
-              <div className="ml-auto flex items-center gap-2 w-full md:w-auto">
-                <div className="relative w-full md:w-64">
-                  <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <Input className="pl-9" placeholder="Search…" value={q} onChange={(e)=>{ setQ(e.target.value); setPage(1); }} />
-                </div>
-                <div className="text-sm text-gray-600 hidden md:block">{loading ? 'Loading…' : `${(contracts?.length||0)} of ${total}`}</div>
-              </div>
+            <div className="px-4 py-3 border-b flex items-center">
+              <div className="ml-auto text-sm text-gray-600 hidden md:block">{loading ? 'Loading…' : `${(contracts?.length||0)} of ${total}`}</div>
             </div>
             <Table>
               <TableHeader>
@@ -256,11 +250,6 @@ export default function LecturerContracts(){
                 )}
               </TableBody>
             </Table>
-          </div>
-          <div className="flex justify-between items-center mt-3">
-            <Button variant="outline" onClick={()=> setPage(p => Math.max(1, p-1))} disabled={page===1}>Prev</Button>
-            <span className="text-sm text-gray-600">Page {page}</span>
-            <Button variant="outline" onClick={()=> setPage(p => (p*limit < total ? p+1 : p))} disabled={page*limit >= total}>Next</Button>
           </div>
         </CardContent>
       </Card>

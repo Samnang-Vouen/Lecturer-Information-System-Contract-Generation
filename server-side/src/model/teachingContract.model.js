@@ -10,13 +10,31 @@ const TeachingContract = sequelize.define('TeachingContract', {
   // Optional teaching period dates
   start_date: { type: DataTypes.DATEONLY, allowNull: true },
   end_date: { type: DataTypes.DATEONLY, allowNull: true },
-  status: { type: DataTypes.ENUM('DRAFT','LECTURER_SIGNED','MANAGEMENT_SIGNED','COMPLETED'), allowNull: false, defaultValue: 'DRAFT' },
+  status: { type: DataTypes.ENUM('LECTURER_SIGNED','MANAGEMENT_SIGNED','COMPLETED'), allowNull: false, defaultValue: 'MANAGEMENT_SIGNED' },
   lecturer_signature_path: { type: DataTypes.STRING(512), allowNull: true },
   management_signature_path: { type: DataTypes.STRING(512), allowNull: true },
   lecturer_signed_at: { type: DataTypes.DATE, allowNull: true },
   management_signed_at: { type: DataTypes.DATE, allowNull: true },
   pdf_path: { type: DataTypes.STRING(512), allowNull: true },
-  created_by: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false }
+  created_by: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+  // Arbitrary items admin writes for the duties table (stored as JSON array)
+  items: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+    get() {
+      const raw = this.getDataValue('items');
+      if (!raw) return [];
+      try { return JSON.parse(raw); } catch { return []; }
+    },
+    set(val) {
+      try {
+        const norm = Array.isArray(val) ? val : [];
+        this.setDataValue('items', JSON.stringify(norm));
+      } catch {
+        this.setDataValue('items', '[]');
+      }
+    }
+  }
 }, {
   tableName: 'Teaching_Contracts',
   timestamps: true,

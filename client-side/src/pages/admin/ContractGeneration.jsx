@@ -1,25 +1,95 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { axiosInstance } from '../../lib/axios';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import Select, { SelectItem } from '../../components/ui/Select';
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../../components/ui/Table';
-import { Plus, Search, FileText, Ellipsis, Eye, Download, Loader2, Info, CheckCircle2, Clock, Trash2 } from 'lucide-react';
+import { Plus, Search, FileText, Ellipsis, Eye, Download, Loader2, Info, CheckCircle2, Clock, Trash2, Calendar, User, DollarSign, GraduationCap, Building2 } from 'lucide-react';
 import Textarea from '../../components/ui/Textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../../components/ui/Dialog';
 import { Checkbox } from '../../components/ui/Checkbox';
 
 export default function ContractGeneration() {
-  // format a date like 8/15/2024 (US)
+  // ...existing code... (keeping all the helper functions and state unchanged)
+  const toInt = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const toBool = (v) => {
+    if (v == null) return false;
+    if (typeof v === 'boolean') return v;
+    if (typeof v === 'number') return v !== 0;
+    const s = String(v).trim().toLowerCase();
+    return s === 'true' || s === '1' || s === 'yes' || s === 'y';
+  };
+  const normId = (v) => (v == null ? null : String(v));
+  const lecturerUserIdFromMapping = (m) => {
+    return normId(
+      m?.lecturer_user_id ??
+      m?.lecturer?.user_id ??
+      m?.lecturer?.id ??
+      m?.user_id ?? null
+    );
+  };
+  const lecturerDisplayFromMapping = (m) => {
+    const title = m?.lecturer?.title || m?.lecturer?.academic_title || m?.lecturer?.title_english || m?.lecturer?.title_khmer || '';
+    const name = m?.lecturer?.display_name || m?.lecturer?.full_name || m?.lecturer?.full_name_english || m?.lecturer?.full_name_khmer || m?.lecturer?.name || m?.lecturer?.email || '';
+    return `${title ? `${title} ` : ''}${name || ''}`.trim();
+  };
+  const hoursFromMapping = (m) => {
+    if (!m || typeof m !== 'object') return 0;
+    const typeHoursStr = String(m.type_hours || '');
+    const th = String(m.theory_hours || '').toLowerCase();
+    const theory15 = th === '15h' || (!th && /15h/i.test(typeHoursStr));
+    const theory30 = th === '30h' || (!th && /30h/i.test(typeHoursStr));
+    const theoryGroups = toInt(m.theory_groups ?? m.groups_15h ?? m.groups_theory ?? m.group_count_theory ?? 0);
+    const labGroups = toInt(m.lab_groups ?? m.practice_groups ?? m.practical_groups ?? m.groups_30h ?? m.groups_lab ?? m.group_count_lab ?? 0);
+    const theoryCombined = toBool(m.theory_combined ?? m.theory_15h_combined ?? m.combine_theory_groups ?? m.combined_theory ?? m.combine);
+    let theoryHours = 0;
+    if (theory15) theoryHours = theoryCombined ? (theoryGroups > 0 ? 15 : 0) : (15 * theoryGroups);
+    else if (theory30) theoryHours = theoryCombined ? (theoryGroups > 0 ? 30 : 0) : (30 * theoryGroups);
+    const labHours = labGroups * 30;
+    const computed = theoryHours + labHours;
+    if (!computed) {
+      const raw = toInt(m.hours ?? m.course?.hours);
+      return raw;
+    }
+    return computed;
+  };
+  const totalHoursFromContract = (contract) => {
+    const arr = Array.isArray(contract?.courses) ? contract.courses : [];
+    const year = contract?.academic_year;
+    const yearMaps = (year && mappingsByYear?.[year]) ? mappingsByYear[year] : [];
+    return arr.reduce((sum, item) => {
+      const match = yearMaps.find(m => {
+        const mCourseId = normId(m.course?.id ?? m.course_id);
+        const mClassId = normId(m.class?.id ?? m.class_id);
+        const iCourseId = normId(item.course_id ?? item.course?.id);
+        const iClassId = normId(item.class_id ?? item.class?.id);
+        const mLecturerId = lecturerUserIdFromMapping(m);
+        const cLecturerId = normId(contract?.lecturer_user_id ?? contract?.lecturer?.user_id ?? contract?.lecturer?.id);
+        const sameCourseClass = mCourseId && iCourseId && mCourseId === iCourseId && mClassId && iClassId && mClassId === iClassId;
+        const sameLecturer = !mLecturerId || !cLecturerId ? true : (mLecturerId === cLecturerId);
+        return sameCourseClass && sameLecturer;
+      });
+      const explicit = toInt(item?.hours);
+      if (explicit > 0) return sum + explicit;
+      const merged = match ? { ...match, theory_combined: (item?.theory_combined ?? match?.theory_combined) } : item;
+      return sum + hoursFromMapping(merged);
+    }, 0);
+  };
   const formatMDY = (value) => {
     if (!value) return '';
     try {
       const d = new Date(value);
       if (isNaN(d.getTime())) return '';
       return d.toLocaleDateString('en-US', { year: 'numeric', month: 'numeric', day: 'numeric' });
-    } catch { return ''; }
+    } catch {
+      return '';
+    }
   };
+
+  // ...existing state variables...
   const [lecturers, setLecturers] = useState([]);
   const [selectedLecturer, setSelectedLecturer] = useState('');
   const [academicYear, setAcademicYear] = useState('2025-2026');
@@ -29,49 +99,62 @@ export default function ContractGeneration() {
   const [mappings, setMappings] = useState([]);
   const [contractId, setContractId] = useState(null);
   const [lastCreatedId, setLastCreatedId] = useState(null);
-  // management UI state
   const [contracts, setContracts] = useState([]);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [listAcademicYear, setListAcademicYear] = useState(''); // empty = All Years
+  const [listAcademicYear, setListAcademicYear] = useState('');
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
-  const [limit, setLimit] = useState(10); // infinite scroll page size
-  // removed signature upload from actions menu per request
+  const [limit, setLimit] = useState(12); // Adjusted for grid layout
   const [showCreate, setShowCreate] = useState(false);
-  // row actions menu state (match Lecturer Management behavior)
   const [openMenuId, setOpenMenuId] = useState(null);
   const [menuCoords, setMenuCoords] = useState({ x: 0, y: 0, dropUp: false });
-  // delete confirmation state
   const [confirmDelete, setConfirmDelete] = useState({ open: false, id: null, label: '' });
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState('');
-  // cache hourly rates by lecturer user id
   const [ratesByLecturer, setRatesByLecturer] = useState({});
-  // infinite scroll sentinel
   const sentinelRef = useRef(null);
   const [hasMore, setHasMore] = useState(true);
-  // Dialog form state
   const [dlgOpen, setDlgOpen] = useState(false);
   const [dlgLecturerId, setDlgLecturerId] = useState('');
   const [dlgHourlyRate, setDlgHourlyRate] = useState('');
   const [dlgStartDate, setDlgStartDate] = useState('');
   const [dlgEndDate, setDlgEndDate] = useState('');
-  const [dlgDescription, setDlgDescription] = useState('');
+  const [dlgItemInput, setDlgItemInput] = useState('');
+  const [dlgItems, setDlgItems] = useState([]);
   const [dlgErrors, setDlgErrors] = useState({});
   const [dlgSelectedMappingIds, setDlgSelectedMappingIds] = useState(new Set());
   const [dlgCourseQuery, setDlgCourseQuery] = useState('');
+  const startRef = useRef(null);
+  const endRef = useRef(null);
+  const [dlgCombineByMapping, setDlgCombineByMapping] = useState({});
+  const [mappingsByYear, setMappingsByYear] = useState({});
+  const [profileToUser, setProfileToUser] = useState({});
 
-  // Currently open contract (for Actions menu)
+  // ...existing useMemo, useCallback, and useEffect hooks...
   const currentMenuContract = useMemo(() => {
     return (contracts || []).find(x => x.id === openMenuId) || null;
   }, [contracts, openMenuId]);
 
-  // Filter mappings for dialog course list
+  const mappingUserId = useCallback((m) => {
+    return normId(
+      m?.lecturer_user_id ??
+      (m?.lecturer_profile_id != null ? profileToUser[m.lecturer_profile_id] : null) ??
+      m?.lecturer?.user_id ??
+      m?.user_id ?? null
+    );
+  }, [profileToUser]);
+
   const dlgFilteredMappings = useMemo(() => {
     const q = (dlgCourseQuery || '').toLowerCase();
     const list = (mappings || []).filter(m => {
+      const st = String(m.status || '').toLowerCase();
+      if (st !== 'accepted') return false;
+      if (dlgLecturerId) {
+        const lid = mappingUserId(m);
+        if (normId(dlgLecturerId) !== lid) return false;
+      }
       if (!q) return true;
       const cname = m.course?.name?.toLowerCase() || '';
       const ccode = m.course?.code?.toLowerCase() || '';
@@ -80,55 +163,133 @@ export default function ContractGeneration() {
       return cname.includes(q) || ccode.includes(q) || cls.includes(q) || meta.includes(q);
     });
     return list;
-  }, [mappings, dlgCourseQuery]);
+  }, [mappings, dlgCourseQuery, dlgLecturerId, mappingUserId]);
 
-  // Validate and create draft via dialog
+  const filteredContracts = useMemo(() => {
+    const normalize = (s) => (s || '').toLowerCase().replace(/\./g, ' ').replace(/\s+/g, ' ').trim();
+    const stripTitle = (s) => {
+      const titles = '(mr|mrs|ms|miss|dr|prof|professor)';
+      return s.replace(new RegExp(`^${titles}\\s+`, 'i'), '').trim();
+    };
+    const qRaw = normalize(search || '');
+    const qName = stripTitle(qRaw);
+    if (!qName) return contracts || [];
+    return (contracts || []).filter(c => {
+      const lecturerTitle = normalize(c.lecturer?.LecturerProfile?.title || c.lecturer?.title || '');
+      const lecturerNameBase = normalize(c.lecturer?.display_name || c.lecturer?.full_name || c.lecturer?.email || '');
+      const fullName = `${lecturerTitle ? lecturerTitle + ' ' : ''}${lecturerNameBase}`.trim();
+      const candidate = stripTitle(fullName);
+      return candidate.startsWith(qName);
+    });
+  }, [contracts, search]);
+
+  // ...existing functions...
   const handleCreateContract = async () => {
     const errs = {};
     const today = new Date(); today.setHours(0,0,0,0);
     const sd = dlgStartDate ? new Date(dlgStartDate) : null;
     const ed = dlgEndDate ? new Date(dlgEndDate) : null;
     if (!dlgLecturerId) errs.lecturer = 'Lecturer is required';
-  // Hourly rate is optional for creation; it can be filled later
     if (!sd) errs.startDate = 'Start Date is required';
     else if (sd < today) errs.startDate = 'Start Date cannot be in the past';
     if (!ed) errs.endDate = 'End Date is required';
     else if (sd && ed <= sd) errs.endDate = 'End Date must be after Start Date';
-    if (!dlgDescription?.trim()) errs.description = 'Description is required';
-    else if (dlgDescription.length > 160) errs.description = 'Description must be at most 160 characters';
-    // Build selected courses from dialog selection
+    if (!dlgItems || dlgItems.length === 0) errs.description = 'Please add at least one duty';
     const selectedMappings = (mappings || []).filter(m => dlgSelectedMappingIds.has(m.id));
     if (selectedMappings.length === 0) errs.courses = 'Please select at least one course to include in this contract.';
     setDlgErrors(errs);
     if (Object.keys(errs).length) return;
-    // Map to payload shape
-    const selectedCoursesPayload = selectedMappings.map(m => ({
-      course_id: m.course?.id,
-      class_id: m.class?.id,
-      course_name: m.course?.name,
-      year_level: m.year_level,
-      term: m.term,
-      academic_year: m.academic_year,
-      hours: m.course?.hours
-    }));
-  // Create draft with explicit lecturer, courses, and period dates
-  await createDraft({ lecturerId: dlgLecturerId, courses: selectedCoursesPayload, start_date: dlgStartDate, end_date: dlgEndDate });
-    setDlgOpen(false);
+    const selectedCoursesPayload = selectedMappings.map(m => {
+      const combined = (dlgCombineByMapping?.[m.id] != null) ? !!dlgCombineByMapping[m.id] : toBool(m.theory_combined);
+      const hours = hoursFromMapping({ ...m, theory_combined: combined });
+      return {
+        course_id: m.course?.id,
+        class_id: m.class?.id,
+        course_name: m.course?.name,
+        year_level: m.year_level,
+        term: m.term,
+        academic_year: m.academic_year,
+        theory_combined: combined,
+        hours
+      };
+    });
+    try {
+      await createDraft({ lecturerId: dlgLecturerId, courses: selectedCoursesPayload, start_date: dlgStartDate, end_date: dlgEndDate, items: dlgItems });
+      setDlgOpen(false);
+      setDlgItems([]);
+      setDlgItemInput('');
+    } catch (e) {
+      const resp = e?.response;
+      const message = resp?.data?.message || 'Failed to create contract';
+      const backendErrors = resp?.data?.errors;
+      const nextErrs = {};
+      if (Array.isArray(backendErrors)) {
+        const text = backendErrors.join(', ');
+        if (/lecturer_user_id/i.test(text)) nextErrs.lecturer = 'Lecturer is required';
+        if (/course/i.test(text)) nextErrs.courses = 'Please select at least one valid course';
+        if (/term/i.test(text)) nextErrs.term = 'Term is required';
+        if (!Object.keys(nextErrs).length) nextErrs.form = text;
+      } else {
+        nextErrs.form = message;
+      }
+      console.error('Create contract failed:', e);
+      setDlgErrors(nextErrs);
+    }
   };
 
+  // ...existing useEffect hooks...
   useEffect(() => {
-    // fetch lecturers (users with lecturer role) via existing endpoint
-    axiosInstance.get('/lecturers').then(res => setLecturers(res.data?.data || [])).catch(()=>{});
-  }, []);
+    const map = new Map();
+    for (const m of (mappings || [])) {
+      const st = String(m.status || '').toLowerCase();
+      if (st !== 'accepted') continue;
+      const uid = mappingUserId(m);
+      if (!uid) continue;
+      if (!map.has(uid)) {
+        map.set(uid, { id: uid, name: lecturerDisplayFromMapping(m) });
+      }
+    }
+    setLecturers(Array.from(map.values()));
+  }, [mappings, mappingUserId]);
 
   useEffect(() => {
-    // fetch assigned course mappings for the selected academic year
-    axiosInstance.get('/course-mappings', { params: { academic_year: academicYear, limit: 100 } })
+    const accepted = (mappings || []).filter(m => String(m.status || '').toLowerCase() === 'accepted');
+    const profileIds = Array.from(new Set(accepted.map(m => m.lecturer_profile_id).filter(Boolean)));
+    const missing = profileIds.filter(pid => !(pid in profileToUser));
+    if (missing.length === 0) return;
+    (async () => {
+      try {
+        let page = 1;
+        let totalPages = 1;
+        const collected = {};
+        do {
+          const res = await axiosInstance.get('/lecturers', { params: { page, limit: 100 } });
+          const data = res.data?.data || [];
+          for (const it of data) {
+            if (it?.lecturerProfileId && it?.id) {
+              collected[it.lecturerProfileId] = it.id;
+            }
+          }
+          totalPages = res.data?.meta?.totalPages || page;
+          const covered = missing.every(pid => (collected[pid] || profileToUser[pid]));
+          if (covered) break;
+          page += 1;
+        } while (page <= totalPages);
+        if (Object.keys(collected).length) {
+          setProfileToUser(prev => ({ ...prev, ...collected }));
+        }
+      } catch {
+        // ignore mapping failures
+      }
+    })();
+  }, [mappings, profileToUser]);
+
+  useEffect(() => {
+    axiosInstance.get('/course-mappings', { params: { academic_year: academicYear, status: 'Accepted', limit: 100 } })
       .then(res => setMappings(res.data?.data || []))
       .catch(()=>{});
   }, [academicYear]);
 
-  // fetch contracts list (append on next pages)
   useEffect(() => {
     const fetchContracts = async () => {
       try {
@@ -148,14 +309,35 @@ export default function ContractGeneration() {
     fetchContracts();
   }, [page, limit, search, statusFilter, listAcademicYear]);
 
-  // reset list when filters/search change
+  useEffect(() => {
+    const years = Array.from(new Set((contracts || []).map(c => c.academic_year).filter(Boolean)));
+    const missing = years.filter(y => !(y in mappingsByYear));
+    if (missing.length === 0) return;
+    (async () => {
+      try {
+        const results = await Promise.all(missing.map(async (year) => {
+          try {
+            const res = await axiosInstance.get('/course-mappings', { params: { academic_year: year, status: 'Accepted', limit: 100 } });
+            return [year, res.data?.data || []];
+          } catch {
+            return [year, []];
+          }
+        }));
+        setMappingsByYear(prev => {
+          const next = { ...prev };
+          for (const [year, arr] of results) next[year] = arr;
+          return next;
+        });
+      } catch { /* ignore */ }
+    })();
+  }, [contracts, mappingsByYear]);
+
   useEffect(() => {
     setPage(1);
     setContracts([]);
     setHasMore(true);
   }, [search, statusFilter, listAcademicYear]);
 
-  // intersection observer for infinite scroll
   useEffect(() => {
     const el = sentinelRef.current;
     if (!el) return;
@@ -169,7 +351,6 @@ export default function ContractGeneration() {
     return () => io.disconnect();
   }, [sentinelRef, loading, hasMore]);
 
-  // Fetch hourly rates for lecturers present in the current page (cached)
   useEffect(() => {
     const ids = Array.from(new Set((contracts || []).map(c => c.lecturer_user_id).filter(Boolean)));
     const missing = ids.filter(id => !(id in ratesByLecturer));
@@ -192,7 +373,7 @@ export default function ContractGeneration() {
           return next;
         });
       } catch {
-        // ignore batch errors; individual entries handled above
+        // ignore batch errors
       }
     })();
   }, [contracts, ratesByLecturer]);
@@ -203,6 +384,17 @@ export default function ContractGeneration() {
       const v = Number(n);
       if (!Number.isFinite(v)) return null;
       return `$${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}/hr`;
+    } catch {
+      return null;
+    }
+  };
+
+  const formatMoney = (n) => {
+    if (n == null) return null;
+    try {
+      const v = Number(n);
+      if (!Number.isFinite(v)) return null;
+      return `$${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
     } catch {
       return null;
     }
@@ -228,13 +420,13 @@ export default function ContractGeneration() {
       year_level: yearLevel,
       start_date: override.start_date || undefined,
       end_date: override.end_date || undefined,
-      courses: override.courses || courses
+      courses: override.courses || courses,
+      items: override.items || dlgItems || []
     };
     const res = await axiosInstance.post('/teaching-contracts', payload);
     setContractId(res.data.id);
-  setLastCreatedId(res.data.id);
+    setLastCreatedId(res.data.id);
     setShowCreate(false);
-    // refresh list
     try {
       const r = await axiosInstance.get('/teaching-contracts', { params: { page: 1, limit, q: search || undefined, status: statusFilter || undefined, academic_year: listAcademicYear || undefined } });
       setContracts(r.data?.data || []);
@@ -257,7 +449,6 @@ export default function ContractGeneration() {
 
   const downloadPdfFor = (id) => {
     const url = `${axiosInstance.defaults.baseURL}/teaching-contracts/${id}/pdf`;
-    // open in new tab; user can save
     window.open(url, '_blank');
   };
 
@@ -265,7 +456,6 @@ export default function ContractGeneration() {
     if (!id) return { ok: false, message: 'Invalid id' };
     try {
       await axiosInstance.delete(`/teaching-contracts/${id}`);
-      // Optimistically remove from UI and adjust total
       setContracts(prev => prev.filter(c => c.id !== id));
       setTotal(t => Math.max(0, (t || 0) - 1));
       return { ok: true };
@@ -284,31 +474,30 @@ export default function ContractGeneration() {
       const createdYear = c.created_at ? new Date(c.created_at).getFullYear() : new Date().getFullYear();
       label = `CTR-${createdYear}-${String(c.id).padStart(3, '0')}`;
     }
-  setDeleteError('');
-  setDeleteBusy(false);
-  setConfirmDelete({ open: true, id, label });
+    setDeleteError('');
+    setDeleteBusy(false);
+    setConfirmDelete({ open: true, id, label });
     closeMenu();
   };
 
-  // open/close actions menu like Lecturer Management
   const openMenu = (id, e) => {
     const rect = e.currentTarget.getBoundingClientRect();
-  const menuHeight = 168; // approximate height for 3 items
+    const menuHeight = 168;
     const gap = 8;
     const shouldDropUp = (rect.bottom + menuHeight + gap) > window.innerHeight;
     const dropUp = shouldDropUp;
     const y = dropUp
       ? Math.max(rect.top - menuHeight - gap, gap)
       : Math.min(rect.bottom + gap, Math.max(window.innerHeight - menuHeight - gap, gap));
-    const width = 176; // w-44
+    const width = 176;
     const rawX = rect.right - width;
     const x = Math.min(Math.max(rawX, gap), Math.max(window.innerWidth - width - gap, gap));
     setMenuCoords({ x, y, dropUp });
     setOpenMenuId(id);
   };
+  
   const closeMenu = () => setOpenMenuId(null);
 
-  // close on outside click, scroll, resize, or Escape
   useEffect(() => {
     const onDocClick = (e) => {
       if (!e.target.closest('.contract-action-menu')) closeMenu();
@@ -328,15 +517,14 @@ export default function ContractGeneration() {
   }, []);
 
   return (
-    <div className="p-4 md:p-6 space-y-5">
-  {/* Removed post-creation banner */}
+    <div className="p-4 md:p-6 space-y-6">
       {/* Page header */}
       <div className="flex items-start md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Contract Management</h1>
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-gray-900">Contract Management</h1>
           <p className="text-gray-600 mt-1">Generate and manage lecturer contracts</p>
         </div>
-        <Button onClick={() => setDlgOpen(true)} className="inline-flex items-center gap-2 cursor-pointer">
+        <Button onClick={() => setDlgOpen(true)} className="inline-flex items-center gap-2 cursor-pointer bg-blue-600 hover:bg-blue-700">
           <Plus className="w-4 h-4" /> Generate Contract
         </Button>
       </div>
@@ -349,14 +537,25 @@ export default function ContractGeneration() {
             <DialogDescription>Fill in the details below to generate a new contract.</DialogDescription>
           </DialogHeader>
           <div className="px-6 pb-6 pt-2 max-h-[70vh] overflow-y-auto">
+            {dlgErrors.form && (
+              <div className="mb-3 rounded-md border border-red-200 bg-red-50 text-red-700 text-sm px-3 py-2">
+                {dlgErrors.form}
+              </div>
+            )}
+            {/* Academic Year */}
+            <div className="space-y-1 mb-4">
+              <label className="block text-sm font-medium">Academic Year</label>
+              <Input className="cursor-pointer h-11 text-base shadow-sm" value={academicYear} onChange={e=>setAcademicYear(e.target.value)} />
+              <p className="text-xs text-gray-500">Lecturers are sourced from Accepted course mappings of this year.</p>
+            </div>
             {/* Lecturer Information */}
             <div className="space-y-1 mb-4">
               <label className="block text-sm font-medium">Lecturer Name <span className="text-red-600">*</span></label>
               <Select className="cursor-pointer" value={dlgLecturerId} onValueChange={async (val)=>{
                 setDlgLecturerId(val);
                 setDlgErrors(prev=>({ ...prev, lecturer: '' }));
-                setDlgSelectedMappingIds(new Set()); // reset selections on lecturer change
-                // Fetch hourly rate for selected lecturer
+                setDlgSelectedMappingIds(new Set());
+                setDlgCombineByMapping({});
                 try {
                   const res = await axiosInstance.get(`/lecturers/${val}/detail`);
                   const rate = res.data?.hourlyRateThisYear || '';
@@ -367,35 +566,73 @@ export default function ContractGeneration() {
                   <SelectItem key={l.id} value={l.id}>{l.name || l.full_name_english || l.full_name_khmer}</SelectItem>
                 ))}
               </Select>
+              {!lecturers.length && (
+                <p className="text-xs text-amber-600">No lecturers found. Try selecting another academic year or ensure Accepted course mappings exist.</p>
+              )}
               {dlgErrors.lecturer && <p className="text-xs text-red-600">{dlgErrors.lecturer}</p>}
             </div>
 
             {/* Contract Details */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-              <div className="space-y-1">
-                <label className="block text-sm font-medium">Hourly Rate (KHR)</label>
-                <Input className="cursor-pointer" value={dlgHourlyRate} readOnly />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <div className="space-y-1 md:col-span-2">
+                <label className="block text-sm font-medium">Hourly Rate ($)</label>
+                <Input className="cursor-pointer h-11 text-base shadow-sm" value={dlgHourlyRate} readOnly />
                 {dlgErrors.hourlyRate && <p className="text-xs text-red-600">{dlgErrors.hourlyRate}</p>}
               </div>
-              <div className="space-y-1">
+              <div className="space-y-1 md:col-span-2">
                 <label className="block text-sm font-medium">Start Date <span className="text-red-600">*</span></label>
-                <Input className="cursor-pointer" type="date" value={dlgStartDate} min={new Date().toISOString().slice(0,10)} onChange={e=>{ setDlgStartDate(e.target.value); setDlgErrors(prev=>({ ...prev, startDate: '' })); }}/>
+                <div className="relative group">
+                  <Input ref={startRef} className="cursor-pointer h-11 text-base pr-10 shadow-sm min-w-[220px]" type="date" value={dlgStartDate} min={new Date().toISOString().slice(0,10)} onChange={e=>{ setDlgStartDate(e.target.value); setDlgErrors(prev=>({ ...prev, startDate: '' })); }}/>
+                  <button type="button" aria-label="Pick start date" className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-gray-500 hover:text-gray-700 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30" onClick={()=>{ try { startRef.current?.showPicker?.(); } catch { startRef.current?.focus?.(); } }}>
+                    <Calendar className="w-4 h-4" />
+                  </button>
+                </div>
                 {dlgErrors.startDate && <p className="text-xs text-red-600">{dlgErrors.startDate}</p>}
               </div>
-              <div className="space-y-1">
+              <div className="space-y-1 md:col-span-2">
                 <label className="block text-sm font-medium">End Date <span className="text-red-600">*</span></label>
-                <Input className="cursor-pointer" type="date" value={dlgEndDate} min={dlgStartDate || new Date().toISOString().slice(0,10)} onChange={e=>{ setDlgEndDate(e.target.value); setDlgErrors(prev=>({ ...prev, endDate: '' })); }}/>
+                <div className="relative group">
+                  <Input ref={endRef} className="cursor-pointer h-11 text-base pr-10 shadow-sm min-w-[220px]" type="date" value={dlgEndDate} min={dlgStartDate || new Date().toISOString().slice(0,10)} onChange={e=>{ setDlgEndDate(e.target.value); setDlgErrors(prev=>({ ...prev, endDate: '' })); }}/>
+                  <button type="button" aria-label="Pick end date" className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-gray-500 hover:text-gray-700 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30" onClick={()=>{ try { endRef.current?.showPicker?.(); } catch { endRef.current?.focus?.(); } }}>
+                    <Calendar className="w-4 h-4" />
+                  </button>
+                </div>
                 {dlgErrors.endDate && <p className="text-xs text-red-600">{dlgErrors.endDate}</p>}
               </div>
             </div>
 
-            {/* Description */}
-            <div className="space-y-1">
-              <label className="block text-sm font-medium">Description <span className="text-red-600">*</span></label>
-              <Textarea className="cursor-pointer" rows={4} maxLength={160} value={dlgDescription} onChange={e=>{ setDlgDescription(e.target.value); setDlgErrors(prev=>({ ...prev, description: '' })); }} placeholder="Short description (max 160 characters)" />
-              <div className="flex justify-between text-xs">
-                {dlgErrors.description ? <span className="text-red-600">{dlgErrors.description}</span> : <span className="text-gray-500">{160 - (dlgDescription?.length || 0)} characters remaining</span>}
-              </div>
+            {/* Itemized list */}
+            <div className="space-y-2">
+              <label className="block text-sm font-medium">Duties (press Enter to add) <span className="text-red-600">*</span></label>
+              <Input
+                className="cursor-pointer"
+                value={dlgItemInput}
+                onChange={e => { setDlgItemInput(e.target.value); if (dlgErrors.description) setDlgErrors(prev=>({ ...prev, description: '' })); }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const v = (dlgItemInput || '').trim();
+                    if (v) {
+                      setDlgItems(prev => [...prev, v]);
+                      setDlgItemInput('');
+                    }
+                  }
+                }}
+                placeholder="Type a duty and press Enter"
+              />
+              {dlgItems.length > 0 && (
+                <ul className="list-disc pl-6 space-y-1 text-sm">
+                  {dlgItems.map((it, idx) => (
+                    <li key={`${it}-${idx}`} className="flex items-start gap-2">
+                      <span className="flex-1">{it}</span>
+                      <button type="button" className="text-xs text-red-600 hover:underline" onClick={() => {
+                        setDlgItems(prev => prev.filter((_, i) => i !== idx));
+                      }}>Remove</button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {dlgErrors.description && <div className="text-xs text-red-600">{dlgErrors.description}</div>}
             </div>
 
             {/* Courses selection */}
@@ -416,20 +653,42 @@ export default function ContractGeneration() {
                 ) : (
                   dlgFilteredMappings.map(m => {
                     const checked = dlgSelectedMappingIds.has(m.id);
-                    const hours = m.course?.hours ?? '-';
+                    const typeHoursStr = String(m.type_hours || '');
+                    const th = String(m.theory_hours || '').toLowerCase();
+                    const theory15 = th === '15h' || (!th && /15h/i.test(typeHoursStr));
+                    const theory30 = th === '30h' || (!th && /30h/i.test(typeHoursStr));
+                    const theoryGroups = Number(m.theory_groups ?? m.groups_15h ?? m.groups_theory ?? m.group_count_theory ?? 0) || 0;
+                    const canCombineTheory = (theory15 || theory30) && theoryGroups > 1;
+                    const combined = canCombineTheory ? !!(dlgCombineByMapping[m.id] ?? m.theory_combined) : false;
+                    const computedHours = hoursFromMapping({ ...m, theory_combined: combined });
+                    const rateNum = (() => { try { const raw = dlgHourlyRate; const n = raw != null ? parseFloat(String(raw).replace(/[^0-9.\-]/g, '')) : NaN; return Number.isFinite(n) ? n : null; } catch { return null; } })();
+                    const estSalary = rateNum != null ? Math.round(rateNum * (computedHours || 0)) : null;
                     return (
-                      <label key={m.id} className="flex items-start gap-3 p-3 hover:bg-gray-50 cursor-pointer">
-                        <Checkbox id={`map-${m.id}`} checked={checked} onCheckedChange={() => {
-                          const next = new Set(Array.from(dlgSelectedMappingIds));
-                          if (checked) next.delete(m.id); else next.add(m.id);
-                          setDlgSelectedMappingIds(next);
-                          setDlgErrors(prev=>({ ...prev, courses: '' }));
-                        }} />
-                        <div className="text-sm">
-                          <div className="font-medium text-gray-900">{m.course?.name} <span className="text-gray-500 font-normal">({hours}h)</span></div>
-                          <div className="text-xs text-gray-600">{m.class?.name || 'Class'} • Year {m.year_level} • Term {m.term} • {m.academic_year}</div>
+                      <div key={m.id} className="p-3 hover:bg-gray-50">
+                        <div className="flex items-start gap-3">
+                          <Checkbox id={`map-${m.id}`} checked={checked} onCheckedChange={() => {
+                            const next = new Set(Array.from(dlgSelectedMappingIds));
+                            if (checked) next.delete(m.id); else next.add(m.id);
+                            setDlgSelectedMappingIds(next);
+                            setDlgErrors(prev=>({ ...prev, courses: '' }));
+                          }} />
+                          <div className="flex-1 text-sm">
+                            <div className="font-medium text-gray-900">
+                              {m.course?.name} <span className="text-gray-500 font-normal">({computedHours || '-'}h)</span>
+                            </div>
+                            <div className="text-xs text-gray-600">{m.class?.name || 'Class'} • Year {m.year_level} • Term {m.term} • {m.academic_year}</div>
+                            {canCombineTheory && (
+                              <label className="mt-2 inline-flex items-center gap-2 text-xs text-gray-700 select-none">
+                                <Checkbox checked={combined} onCheckedChange={(v)=> setDlgCombineByMapping(prev => ({ ...prev, [m.id]: !!v }))} />
+                                Combine into 1 <span className="text-gray-500">({theory15 ? '15h' : '30h'})</span>
+                              </label>
+                            )}
+                            {estSalary != null && (
+                              <div className="mt-1 text-xs text-gray-600">Est. salary: {estSalary.toLocaleString('en-US')}</div>
+                            )}
+                          </div>
                         </div>
-                      </label>
+                      </div>
                     );
                   })
                 )}
@@ -441,11 +700,10 @@ export default function ContractGeneration() {
             <Button variant="outline" className="cursor-pointer" onClick={()=> setDlgOpen(false)}>Cancel</Button>
             <Button className="cursor-pointer" onClick={handleCreateContract}>Generate Contract</Button>
           </div>
-          {/* keep footer clean; courses error shown near list */}
         </DialogContent>
       </Dialog>
 
-      {/* Create form card */}
+      {/* Create form card (legacy) */}
       {showCreate && (
         <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
           <div className="px-4 py-3 border-b">
@@ -497,154 +755,231 @@ export default function ContractGeneration() {
         </div>
       )}
 
-      <div className="mt-2">
-        {/* Search & filter bar */}
-        <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-3 md:p-4 flex flex-col md:flex-row md:items-center gap-3">
-          <div className="flex-1">
-            <div className="relative">
-              <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <Input className="pl-9 rounded-xl" placeholder="Search by contract ID, lecturer name, or department…" value={search} onChange={e=>{ setSearch(e.target.value); setPage(1); }} />
-            </div>
+      {/* Search & filter bar */}
+      <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-3 md:p-4 flex flex-col md:flex-row md:items-center gap-3">
+        <div className="flex-1">
+          <div className="relative">
+            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <Input className="pl-9 rounded-xl" placeholder="Search lecturer name without title" value={search} onChange={e=>{ setSearch(e.target.value); setPage(1); }} />
           </div>
-          <div className="min-w-[160px]">
-            <Select value={statusFilter} onValueChange={v=>{ setStatusFilter(v); setPage(1); }} placeholder="All Status">
-              <SelectItem value="">All Status</SelectItem>
-              <SelectItem value="DRAFT">Draft</SelectItem>
-              <SelectItem value="LECTURER_SIGNED">Lecturer Signed</SelectItem>
-              <SelectItem value="MANAGEMENT_SIGNED">Management Signed</SelectItem>
-              <SelectItem value="COMPLETED">Completed</SelectItem>
-            </Select>
-          </div>
-          {/* Removed All Years, Page size, Filters, and Reset buttons as requested */}
         </div>
-
-  <div className="mt-3 md:mt-4 rounded-2xl border border-gray-200 bg-white shadow-sm overflow-x-auto">
-          <div className="px-4 py-3 border-b">
-            <div className="flex items-center gap-2">
-              <FileText className="w-4 h-4 text-blue-600"/>
-              <div className="font-semibold">Contracts ({total})</div>
-              <div className="ml-auto text-sm text-gray-600">{(contracts?.length||0)} of {total}</div>
-            </div>
-            <p className="text-xs text-gray-500 mt-1">All lecturer contracts</p>
-          </div>
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-gray-50">
-                <TableHead className="whitespace-nowrap">Contract ID</TableHead>
-                <TableHead className="whitespace-nowrap">Lecturer</TableHead>
-                <TableHead className="whitespace-nowrap">Department</TableHead>
-                <TableHead className="whitespace-nowrap">Period</TableHead>
-                <TableHead className="whitespace-nowrap">Rate</TableHead>
-                <TableHead className="whitespace-nowrap">Status</TableHead>
-                <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(loading && contracts.length === 0) && Array.from({ length: 5 }).map((_, i) => (
-                <TableRow key={`sk-${i}`} className="animate-pulse">
-                  <TableCell><div className="h-4 w-24 bg-gray-200 rounded"/></TableCell>
-                  <TableCell>
-                    <div className="h-4 w-32 bg-gray-200 rounded mb-1"/>
-                    <div className="h-3 w-40 bg-gray-100 rounded"/>
-                  </TableCell>
-                  <TableCell><div className="h-4 w-32 bg-gray-200 rounded"/></TableCell>
-                  <TableCell><div className="h-4 w-28 bg-gray-200 rounded"/></TableCell>
-                  <TableCell><div className="h-4 w-16 bg-gray-200 rounded"/></TableCell>
-                  <TableCell><div className="h-5 w-20 bg-gray-100 rounded-full"/></TableCell>
-                  <TableCell className="text-right"><div className="h-8 w-8 bg-gray-100 rounded" style={{display:'inline-block'}}/></TableCell>
-                </TableRow>
-              ))}
-              {(contracts || []).map(c => {
-                const createdYear = c.created_at ? new Date(c.created_at).getFullYear() : new Date().getFullYear();
-                const formattedId = `CTR-${createdYear}-${String(c.id).padStart(3, '0')}`;
-                const hours = (c.courses || []).reduce((a, cc) => a + (cc.hours || 0), 0);
-                const rate = ratesByLecturer[c.lecturer_user_id];
-                const startDate = c.start_date || c.startDate || c.start || null;
-                const endDate = c.end_date || c.endDate || c.end || null;
-                const hasBothDates = !!(startDate && endDate);
-                const hasAnyDate = !!(startDate || endDate);
-                const period = `Term ${c.term} • ${c.academic_year}`;
-                const dept = c.lecturer?.department_name || '-';
-                const lecturerName = c.lecturer?.display_name || c.lecturer?.full_name || c.lecturer?.email;
-                const statusMap = {
-                  DRAFT: { label: 'draft', class: 'bg-gray-100 text-gray-700 border-gray-200', icon: null },
-                  LECTURER_SIGNED: { label: 'waiting management', class: 'bg-blue-50 text-blue-700 border-blue-200', icon: Info },
-                  MANAGEMENT_SIGNED: { label: 'waiting lecturer', class: 'bg-amber-50 text-amber-700 border-amber-200', icon: Clock },
-                  COMPLETED: { label: 'completed', class: 'bg-green-50 text-green-700 border-green-200', icon: CheckCircle2 },
-                };
-                const st = statusMap[c.status] || statusMap.DRAFT;
-                return (
-                  <TableRow key={c.id} className="hover:bg-gray-50">
-                    <TableCell>
-                      <div className="font-medium">{formattedId}</div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="font-medium text-gray-900">{lecturerName}</div>
-                      <div className="text-xs text-gray-500">{c.lecturer?.email}</div>
-                    </TableCell>
-                    <TableCell>{dept}</TableCell>
-                    <TableCell>
-                      {hasBothDates ? (
-                        <div className="text-gray-900 leading-tight">
-                          <div>{formatMDY(startDate)}</div>
-                          <div className="text-gray-600">to {formatMDY(endDate)}</div>
-                        </div>
-                      ) : hasAnyDate ? (
-                        <div className="text-gray-900 leading-tight">
-                          <div>{formatMDY(startDate || endDate)}</div>
-                          <div className="text-gray-600">{period}</div>
-                        </div>
-                      ) : (
-                        <div className="text-gray-900">{period}</div>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="text-gray-900 leading-tight">
-                        <div className="font-medium">{formatRate(rate) ?? '-'}</div>
-                        <div className="text-gray-600">{hours}h total</div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium border ${st.class}`}>
-                        {st.icon ? React.createElement(st.icon, { className: 'w-3.5 h-3.5' }) : null}
-                        {st.label}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-right contract-action-menu">
-                      <button
-                        type="button"
-                        className="inline-flex items-center justify-center w-8 h-8 rounded-md hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                        aria-haspopup="menu"
-                        aria-expanded={openMenuId === c.id}
-                        onClick={(e) => openMenu(c.id, e)}
-                        aria-label="Open actions"
-                      >
-                        <Ellipsis className="w-5 h-5 text-gray-600" />
-                      </button>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-              {(!contracts || contracts.length === 0) && !loading && (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center text-sm text-gray-500 py-6">No contracts found.</TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
-        {/* Infinite scroll sentinel */}
-        <div ref={sentinelRef} className="flex justify-center items-center py-4 text-sm text-gray-500">
-          {loading ? 'Loading…' : (hasMore ? 'Scroll to load more' : 'No more results')}
+        <div className="min-w-[160px]">
+          <Select value={statusFilter} onValueChange={v=>{ setStatusFilter(v); setPage(1); }} placeholder="All Status">
+            <SelectItem value="">All Status</SelectItem>
+            <SelectItem value="LECTURER_SIGNED">Lecturer Signed</SelectItem>
+            <SelectItem value="MANAGEMENT_SIGNED">Management Signed</SelectItem>
+            <SelectItem value="COMPLETED">Completed</SelectItem>
+          </Select>
         </div>
       </div>
+
+      {/* Contracts Grid */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <FileText className="w-5 h-5 text-blue-600"/>
+            <h2 className="text-lg font-semibold">Contracts ({total})</h2>
+          </div>
+          <div className="text-sm text-gray-600">{(contracts?.length||0)} of {total} shown</div>
+        </div>
+
+        {/* Contract Cards Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {/* Loading skeletons */}
+          {(loading && contracts.length === 0 && !search) && Array.from({ length: 8 }).map((_, i) => (
+            <div key={`sk-${i}`} className="bg-white rounded-lg border border-gray-200 p-4 space-y-3 animate-pulse">
+              <div className="flex items-start justify-between">
+                <div className="h-4 w-24 bg-gray-200 rounded"/>
+                <div className="h-6 w-6 bg-gray-200 rounded"/>
+              </div>
+              <div className="space-y-2">
+                <div className="h-5 w-32 bg-gray-200 rounded"/>
+                <div className="h-3 w-40 bg-gray-100 rounded"/>
+              </div>
+              <div className="space-y-2">
+                <div className="h-4 w-28 bg-gray-200 rounded"/>
+                <div className="h-4 w-20 bg-gray-200 rounded"/>
+              </div>
+              <div className="flex justify-between items-center pt-2 border-t">
+                <div className="h-5 w-20 bg-gray-100 rounded-full"/>
+                <div className="h-8 w-8 bg-gray-100 rounded"/>
+              </div>
+            </div>
+          ))}
+
+          {/* Contract Cards */}
+          {(filteredContracts || []).map(c => {
+            const createdYear = c.created_at ? new Date(c.created_at).getFullYear() : new Date().getFullYear();
+            const formattedId = `CTR-${createdYear}-${String(c.id).padStart(3, '0')}`;
+            const hours = totalHoursFromContract(c);
+            const rate = ratesByLecturer[c.lecturer_user_id];
+            const salary = (Number.isFinite(Number(rate)) && Number.isFinite(Number(hours)))
+              ? Number(rate) * Number(hours)
+              : null;
+            const startDate = c.start_date || c.startDate || c.start || null;
+            const endDate = c.end_date || c.endDate || c.end || null;
+            const hasBothDates = !!(startDate && endDate);
+            const hasAnyDate = !!(startDate || endDate);
+            const period = `Term ${c.term} • ${c.academic_year}`;
+            const dept = c.lecturer?.department_name || 'N/A';
+            const lecturerTitle = c.lecturer?.LecturerProfile?.title || c.lecturer?.title || '';
+            const lecturerNameBase = c.lecturer?.display_name || c.lecturer?.full_name || c.lecturer?.email;
+            const lecturerName = `${lecturerTitle ? lecturerTitle + '. ' : ''}${lecturerNameBase || ''}`.trim();
+            const statusMap = {
+              LECTURER_SIGNED: { label: 'Waiting Management', class: 'bg-blue-50 text-blue-700 border-blue-200', icon: Info },
+              MANAGEMENT_SIGNED: { label: 'Waiting Lecturer', class: 'bg-amber-50 text-amber-700 border-amber-200', icon: Clock },
+              COMPLETED: { label: 'Completed', class: 'bg-green-50 text-green-700 border-green-200', icon: CheckCircle2 },
+            };
+            const st = statusMap[c.status] || { label: String(c.status||'').toLowerCase(), class: 'bg-gray-100 text-gray-700 border-gray-200' };
+
+            return (
+              <div key={c.id} className="bg-white rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-md transition-all duration-200 p-4 group">
+                {/* Header */}
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-blue-600" />
+                    <span className="font-medium text-gray-900 text-sm">{formattedId}</span>
+                  </div>
+                  <div className="contract-action-menu">
+                    <button
+                      type="button"
+                      className="opacity-0 group-hover:opacity-100 inline-flex items-center justify-center w-8 h-8 rounded-md hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-opacity"
+                      onClick={(e) => openMenu(c.id, e)}
+                      aria-label="Open actions"
+                    >
+                      <Ellipsis className="w-4 h-4 text-gray-600" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Lecturer Info */}
+                <div className="mb-4">
+                  <div className="flex items-start gap-2 mb-1">
+                    <User className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium text-gray-900 text-sm truncate" title={lecturerName}>
+                        {lecturerName}
+                      </div>
+                      <div className="text-xs text-gray-500 truncate" title={c.lecturer?.email}>
+                        {c.lecturer?.email}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-gray-600">
+                    <Building2 className="w-3 h-3" />
+                    <span className="truncate">{dept}</span>
+                  </div>
+                </div>
+
+                {/* Period */}
+                <div className="mb-4">
+                  <div className="flex items-center gap-2 text-xs text-gray-600 mb-1">
+                    <Calendar className="w-3 h-3" />
+                    <span>Contract Period</span>
+                  </div>
+                  {hasBothDates ? (
+                    <div className="text-sm">
+                      <div className="font-medium text-gray-900">{formatMDY(startDate)}</div>
+                      <div className="text-gray-600">to {formatMDY(endDate)}</div>
+                    </div>
+                  ) : hasAnyDate ? (
+                    <div className="text-sm">
+                      <div className="font-medium text-gray-900">{formatMDY(startDate || endDate)}</div>
+                      <div className="text-gray-600">{period}</div>
+                    </div>
+                  ) : (
+                    <div className="text-sm font-medium text-gray-900">{period}</div>
+                  )}
+                </div>
+
+                {/* Financial Info */}
+                <div className="mb-4">
+                  <div className="flex items-center gap-2 text-xs text-gray-600 mb-1">
+                    <DollarSign className="w-3 h-3" />
+                    <span>Financial Details</span>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Rate:</span>
+                      <span className="font-medium text-gray-900">{formatRate(rate) ?? 'N/A'}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Hours:</span>
+                      <span className="font-medium text-gray-900">{hours}h</span>
+                    </div>
+                    {salary != null && (
+                      <div className="flex justify-between text-sm pt-1 border-t border-gray-100">
+                        <span className="text-gray-600">Total:</span>
+                        <span className="font-semibold text-green-700">{formatMoney(salary)}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Status and Actions */}
+                <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+                  <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium border ${st.class}`}>
+                    {st.icon ? React.createElement(st.icon, { className: 'w-3 h-3' }) : null}
+                    {st.label}
+                  </span>
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => previewPdfFor(c.id)}
+                      className="p-1.5 rounded-md hover:bg-gray-100 text-gray-600 hover:text-gray-900 transition-colors"
+                      title="View Contract"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => downloadPdfFor(c.id)}
+                      className="p-1.5 rounded-md hover:bg-gray-100 text-gray-600 hover:text-gray-900 transition-colors"
+                      title="Download PDF"
+                    >
+                      <Download className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Empty state */}
+          {(!loading && (filteredContracts || []).length === 0) && (
+            <div className="col-span-full flex flex-col items-center justify-center py-12 text-center">
+              <FileText className="w-12 h-12 text-gray-300 mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No contracts found</h3>
+              <p className="text-gray-500 mb-4">
+                {search ? 'Try adjusting your search criteria' : 'Get started by generating your first contract'}
+              </p>
+              {!search && (
+                <Button onClick={() => setDlgOpen(true)} className="inline-flex items-center gap-2">
+                  <Plus className="w-4 h-4" /> Generate Contract
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Infinite scroll sentinel */}
+        <div ref={sentinelRef} className="flex justify-center items-center py-8 text-sm text-gray-500">
+          {loading && contracts.length > 0 && (
+            <div className="flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Loading more contracts...
+            </div>
+          )}
+          {!loading && hasMore && 'Scroll to load more'}
+          {!loading && !hasMore && contracts.length > 0 && 'All contracts loaded'}
+        </div>
+      </div>
+
       {/* Floating actions menu (portal) */}
       {openMenuId && ReactDOM.createPortal(
         <div className="fixed z-50 contract-action-menu" style={{ top: menuCoords.y, left: menuCoords.x }}>
           <div className="w-44 bg-white border border-gray-200 rounded-md shadow-lg py-2 text-sm">
             <button onClick={() => { previewPdfFor(openMenuId); closeMenu(); }} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-left"><Eye className="w-4 h-4"/> View Contract</button>
             <button onClick={() => { downloadPdfFor(openMenuId); closeMenu(); }} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-left"><Download className="w-4 h-4"/> Download PDF</button>
-            {currentMenuContract?.status === 'DRAFT' && (
+            {currentMenuContract && currentMenuContract.status !== 'COMPLETED' && (
               <>
                 <div className="my-1 border-t border-gray-100" />
                 <button onClick={() => { openDeleteConfirm(openMenuId); }} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-red-50 text-left text-red-600"><Trash2 className="w-4 h-4"/> Delete</button>
@@ -654,6 +989,7 @@ export default function ContractGeneration() {
         </div>,
         document.body
       )}
+
       {/* Delete confirmation dialog */}
       <Dialog open={confirmDelete.open} onOpenChange={(v)=> setConfirmDelete(prev => ({ ...prev, open: v }))}>
         <DialogContent className="w-full max-w-sm p-0 overflow-hidden">

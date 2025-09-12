@@ -616,7 +616,7 @@ export default function Recruitment() {
                   <CardContent className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <label className="block text-sm font-medium text-gray-700">Full Name*</label>
+                        <label className="block text-sm font-medium text-gray-700">Full Name <span className="text-red-500" aria-hidden="true">*</span></label>
                         <Input
                           required
                           value={newCandidate.fullName}
@@ -641,7 +641,7 @@ export default function Recruitment() {
                         )}
                       </div>
                       <div className="space-y-2">
-                        <label className="block text-sm font-medium text-gray-700">Email*</label>
+                        <label className="block text-sm font-medium text-gray-700">Email <span className="text-red-500" aria-hidden="true">*</span></label>
                         <Input
                           required
                           type="email"
@@ -652,7 +652,7 @@ export default function Recruitment() {
                         />
                       </div>
                       <div className="space-y-2">
-                        <label className="block text-sm font-medium text-gray-700">Phone*</label>
+                        <label className="block text-sm font-medium text-gray-700">Phone <span className="text-red-500" aria-hidden="true">*</span></label>
                         <PhoneInput
                           country={'kh'}
                           value={(newCandidate.phone || '').replace(/^\+/, '')}
@@ -692,21 +692,20 @@ export default function Recruitment() {
                         )}
                       </div>
                       <div className="space-y-2">
-                        <label className="block text-sm font-medium text-gray-700">Position Applied For*</label>
+                        <label className="block text-sm font-medium text-gray-700">Position Applied For <span className="text-red-500" aria-hidden="true">*</span></label>
                         <Select value={newCandidate.positionAppliedFor} onValueChange={(value) => setNewCandidate({ ...newCandidate, positionAppliedFor: value })} placeholder="Select position">
                           <SelectItem value="Lecturer">Lecturer</SelectItem>
                           <SelectItem value="Assistant Lecturer">Assistant Lecturer</SelectItem>
                           <SelectItem value="Senior Lecturer">Senior Lecturer</SelectItem>
                           <SelectItem value="Adjunct Lecturer">Adjunct Lecturer</SelectItem>
                           <SelectItem value="Visiting Lecturer">Visiting Lecturer</SelectItem>
-                          <SelectItem value="Professor">Professor</SelectItem>
                         </Select>
                         {submitAttempted && !newCandidate.positionAppliedFor && (
                           <p className="text-xs text-red-600">This field is required</p>
                         )}
                       </div>
                       <div className="space-y-2 md:col-span-2">
-                        <label className="block text-sm font-medium text-gray-700">Interview Date & Time*</label>
+                        <label className="block text-sm font-medium text-gray-700">Interview Date & Time <span className="text-red-500" aria-hidden="true">*</span></label>
                         <LocalizationProvider dateAdapter={AdapterDayjs}>
                           <DateTimePicker
                             label="Interview Date & Time"
@@ -749,22 +748,26 @@ export default function Recruitment() {
                       </div>
                     )}
                     {selectedCandidate && (
-                      ['accepted','rejected','done'].includes(selectedCandidate.status) ? (
+                      ['accepted','rejected','done','discussion'].includes(selectedCandidate.status) ? (
                         <div className="text-center py-10">
                           {selectedCandidate.status === 'accepted' || selectedCandidate.status === 'done' ? (
                             <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
                               <CheckCircle className="w-8 h-8 text-green-600" />
                             </div>
-                          ) : (
+                          ) : selectedCandidate.status === 'rejected' ? (
                             <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
                               <XCircle className="w-8 h-8 text-red-600" />
                             </div>
+                          ) : (
+                            <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                              <MessageCircle className="w-8 h-8 text-blue-600" />
+                            </div>
                           )}
                           <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                            {selectedCandidate.status === 'rejected' ? 'Candidate Rejected' : 'Candidate Accepted'}
+                            {selectedCandidate.status === 'rejected' ? 'Candidate Rejected' : selectedCandidate.status === 'discussion' ? 'Candidate Under Discussion' : 'Candidate Accepted'}
                           </h3>
                           <p className="text-gray-600">
-                            Interview details are hidden for {selectedCandidate.status === 'rejected' ? 'rejected' : 'accepted or done'} candidates.
+                            {selectedCandidate.status === 'discussion' ? 'Interview evaluation is hidden while the candidate is under discussion.' : `Interview details are hidden for ${selectedCandidate.status === 'rejected' ? 'rejected' : 'accepted or done'} candidates.`}
                           </p>
                         </div>
                       ) : (

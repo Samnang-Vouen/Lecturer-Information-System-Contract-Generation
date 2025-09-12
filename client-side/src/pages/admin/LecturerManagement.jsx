@@ -18,6 +18,59 @@ import toast from 'react-hot-toast';
 import AssignCoursesDialog from '../../components/AssignCoursesDialog';
 
 export default function LecturerManagement(){
+  // Extract first non-empty bio string from various possible API shapes
+  const extractBio = React.useCallback((rawObj) => {
+    try {
+      const candidates = [
+        rawObj,
+        rawObj?.data,
+        rawObj?.profile,
+        rawObj?.lecturer_profile,
+        rawObj?.data?.profile,
+      ];
+      const keys = ['qualifications','bio','about_me','short_bio','description','about','summary'];
+      for (const container of candidates) {
+        if (!container) continue;
+        for (const k of keys) {
+          const v = container[k];
+          if (v !== undefined && v !== null) {
+            const s = String(v).trim();
+            if (s) return s;
+          }
+        }
+      }
+      // Deep scan fallback: search nested objects for likely bio-like fields
+      const seen = new Set();
+      const matchKey = (k) => /bio|qualif|about|summary|desc/i.test(String(k));
+      const dfs = (obj, depth=0) => {
+        if (!obj || typeof obj !== 'object' || depth > 4 || seen.has(obj)) return '';
+        seen.add(obj);
+        if (Array.isArray(obj)) {
+          for (const item of obj) {
+            const r = dfs(item, depth+1);
+            if (r) return r;
+          }
+          return '';
+        }
+        for (const [k,v] of Object.entries(obj)) {
+          try {
+            if (matchKey(k) && (typeof v === 'string' || typeof v === 'number')) {
+              const s = String(v).trim();
+              if (s) return s;
+            }
+            if (v && typeof v === 'object') {
+              const r = dfs(v, depth+1);
+              if (r) return r;
+            }
+          } catch {}
+        }
+        return '';
+      };
+      const deep = dfs(rawObj);
+      if (deep) return deep;
+    } catch {}
+    return '';
+  }, []);
   // Helper to compute server base (protocol+host[:port]) from axios baseURL for building file URLs
   const serverBase = React.useMemo(() => {
     try {
@@ -53,6 +106,8 @@ export default function LecturerManagement(){
   const [createdLecturers, setCreatedLecturers] = useState([]); // session-created list
   const [openMenuId, setOpenMenuId] = useState(null);
   const [menuCoords, setMenuCoords] = useState({ x:0, y:0, dropUp:false });
+  // Popover for remaining courses (+N)
+  const [coursesPopover, setCoursesPopover] = useState(null); // { id, items, x, y, dropUp }
   // Unified profile dialog (used for both Edit and View/read-only)
   const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false);
   const [dialogReadonly, setDialogReadonly] = useState(false);
@@ -169,6 +224,23 @@ export default function LecturerManagement(){
   };
   const closeMenu=()=> setOpenMenuId(null);
 
+  const openCoursesPopover = (lecturer, e)=>{
+    // compute anchor position similar to actions menu
+    const rect = e.currentTarget.getBoundingClientRect();
+    const menuHeight = 240;
+    const gap = 8;
+    const shouldDropUp = (rect.bottom + menuHeight + gap) > window.innerHeight;
+    const dropUp = shouldDropUp;
+    const y = dropUp ? Math.max(rect.top - menuHeight - gap, gap) : Math.min(rect.bottom + gap, Math.max(window.innerHeight - menuHeight - gap, gap));
+    const width = 260;
+    const rawX = rect.right - width;
+    const x = Math.min(Math.max(rawX, gap), Math.max(window.innerWidth - width - gap, gap));
+    const items = (lecturer.courses || []).slice(3);
+    if(!items.length){ setCoursesPopover(null); return; }
+    setCoursesPopover({ id: lecturer.id, items, x, y, dropUp });
+  };
+  const closeCoursesPopover = ()=> setCoursesPopover(null);
+
   const requestDelete = (lecturer)=>{ setLecturerToDelete(lecturer); setIsDeleteModalOpen(true); closeMenu(); };
   const cancelDelete=()=>{ setIsDeleteModalOpen(false); setLecturerToDelete(null); };
   const confirmDelete= async ()=>{ if(!lecturerToDelete) return; try{ await axiosInstance.delete(`/lecturers/${lecturerToDelete.id}`); setLecturers(prev=> prev.filter(l=> l.id!==lecturerToDelete.id)); }catch(e){ console.error('Delete lecturer failed', e);} finally { cancelDelete(); } };
@@ -182,6 +254,7 @@ export default function LecturerManagement(){
       const raw = res.data || {};
       const detail = raw.data || raw.profile || raw.lecturer_profile || raw || {};
       const get = (k, alt) => detail[k] ?? raw[k] ?? raw.data?.[k] ?? raw.profile?.[k] ?? raw.lecturer_profile?.[k] ?? alt;
+  const prefilledBio = get('short_bio') || extractBio(raw);
       const enriched = {
         id: lecturer.id,
         name: lecturer.name || get('name',''),
@@ -192,7 +265,7 @@ export default function LecturerManagement(){
         occupation: get('occupation','') || '',
         place: get('place','') || '',
         phone: get('phone') || get('phone_number') || '',
-        bio: get('qualifications',''),
+        bio: prefilledBio,
         specialization: get('researchFields') || get('research_fields') || lecturer.researchFields || [],
         education: get('education') || [],
         experience: get('experience') || [],
@@ -224,6 +297,7 @@ export default function LecturerManagement(){
       const raw = res.data || {};
       const detail = raw.data || raw.profile || raw.lecturer_profile || raw || {};
       const get = (k, alt) => detail[k] ?? raw[k] ?? raw.data?.[k] ?? raw.profile?.[k] ?? raw.lecturer_profile?.[k] ?? alt;
+  const prefilledBio = get('short_bio') || extractBio(raw);
       const enriched = {
         id: lecturer.id,
         name: lecturer.name || get('name',''),
@@ -234,7 +308,7 @@ export default function LecturerManagement(){
         occupation: get('occupation','') || '',
         place: get('place','') || '',
         phone: get('phone') || get('phone_number') || '',
-        bio: get('qualifications',''),
+        bio: prefilledBio,
         specialization: get('researchFields') || get('research_fields') || lecturer.researchFields || [],
         education: get('education') || [],
         experience: get('experience') || [],
@@ -261,14 +335,14 @@ export default function LecturerManagement(){
   const saveEditProfile = async ()=> {
     if(!selectedLecturer) return;
     try {
-      // Save bio (qualifications) & research_fields
+      // Save bio (short_bio) & research_fields
   await axiosInstance.patch(`/lecturers/${selectedLecturer.id}/profile`, {
-    qualifications: selectedLecturer.bio || '',
-  research_fields: selectedLecturer.specialization.join(','),
-  phone_number: selectedLecturer.phone || null,
-  bank_name: selectedLecturer.bank_name || null,
-  account_name: selectedLecturer.account_name || null,
-  account_number: selectedLecturer.account_number || null
+    short_bio: selectedLecturer.bio || '',
+    research_fields: selectedLecturer.specialization.join(','),
+    phone_number: selectedLecturer.phone || null,
+    bank_name: selectedLecturer.bank_name || null,
+    account_name: selectedLecturer.account_name || null,
+    account_number: selectedLecturer.account_number || null
   });
       // Optionally update status/position via update user endpoint
       await axiosInstance.put(`/lecturers/${selectedLecturer.id}`, {
@@ -369,7 +443,24 @@ export default function LecturerManagement(){
 
   const cancelAssignment = ()=> { setAssigning(null); };
 
-  useEffect(()=>{ function onDocClick(e){ if(!e.target.closest('.lecturer-action-menu')) closeMenu(); } document.addEventListener('click', onDocClick); const onScrollOrResize=()=> closeMenu(); window.addEventListener('scroll', onScrollOrResize,true); window.addEventListener('resize', onScrollOrResize); return ()=>{ document.removeEventListener('click', onDocClick); window.removeEventListener('scroll', onScrollOrResize,true); window.removeEventListener('resize', onScrollOrResize); }; },[]);
+  useEffect(()=>{ 
+    function onDocClick(e){ 
+      if(!e.target.closest('.lecturer-action-menu')) closeMenu(); 
+      if(!e.target.closest('.courses-popover') && !e.target.closest('.courses-plus-chip')) closeCoursesPopover();
+    } 
+    document.addEventListener('click', onDocClick);
+    const onKey = (e)=>{ if(e.key === 'Escape') { closeCoursesPopover(); closeMenu(); } };
+    window.addEventListener('keydown', onKey);
+    const onScrollOrResize=()=>{ closeMenu(); closeCoursesPopover(); };
+    window.addEventListener('scroll', onScrollOrResize,true); 
+    window.addEventListener('resize', onScrollOrResize); 
+    return ()=>{ 
+      document.removeEventListener('click', onDocClick); 
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('scroll', onScrollOrResize,true); 
+      window.removeEventListener('resize', onScrollOrResize); 
+    }; 
+  },[]);
   useEffect(()=>{ if(isProfileDialogOpen){ const o=document.body.style.overflow; document.body.style.overflow='hidden'; return ()=>{ document.body.style.overflow=o; }; } },[isProfileDialogOpen]);
 
   // removed side drawer detail loader
@@ -533,7 +624,11 @@ export default function LecturerManagement(){
                       <td className='px-6 py-4 whitespace-nowrap text-gray-600'>
                         <div className='flex flex-wrap gap-2'>
                           {l.courses && l.courses.length>0 ? l.courses.slice(0,3).map((c,i)=> <span key={i} className='px-3 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-xs font-semibold'>{c.course_name || c.name || c.courseCode || c.course_code || c}</span>) : <span className='text-xs text-gray-400'>—</span>}
-                          {l.courses && l.courses.length>3 && <span className='px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-xs font-semibold'>+{l.courses.length-3}</span>}
+                          {l.courses && l.courses.length>3 && (
+                            <button type='button' onClick={(e)=> openCoursesPopover(l,e)} className='courses-plus-chip px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-xs font-semibold hover:bg-indigo-200'>
+                              +{l.courses.length-3}
+                            </button>
+                          )}
                         </div>
                       </td>
                       <td className='px-6 py-4 whitespace-nowrap'>
@@ -855,6 +950,34 @@ export default function LecturerManagement(){
         )}
       </DialogContent>
     </Dialog>
+
+    {coursesPopover && (()=>{
+      const items = coursesPopover.items || [];
+      return (
+        <div className='fixed z-40 courses-popover' style={{ top: coursesPopover.y, left: coursesPopover.x }}>
+          <div className='w-72 max-h-72 overflow-auto bg-white border border-gray-200 rounded-lg shadow-xl ring-1 ring-black/5'>
+            <div className='sticky top-0 z-10 flex items-center justify-between px-3 py-2 bg-white/95 backdrop-blur border-b'>
+              <div className='text-[11px] font-semibold tracking-wide text-gray-600'>More Courses <span className='ml-1 text-gray-400'>({items.length})</span></div>
+              <button onClick={closeCoursesPopover} className='p-1 rounded hover:bg-gray-100 text-gray-500' aria-label='Close'>
+                <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='currentColor' className='w-4 h-4'>
+                  <path fillRule='evenodd' d='M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z' clipRule='evenodd' />
+                </svg>
+              </button>
+            </div>
+            <ul className='py-2'>
+              {items.map((c,idx)=>{
+                const label = c.course_name || c.name || c.courseCode || c.course_code || String(c);
+                return (
+                  <li key={idx} className='px-3 py-2 text-[13px] leading-snug text-gray-800 hover:bg-gray-50 border-b last:border-b-0'>
+                    {label}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </div>
+      );
+    })()}
 
     {isDeleteModalOpen && ReactDOM.createPortal(<div className='fixed inset-0 z-50'>
       <div className='absolute inset-0 bg-black/50' onClick={cancelDelete} />

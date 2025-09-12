@@ -20,6 +20,8 @@ import { CandidateQuestion } from './candidateQuestion.model.js';
 import University from './university.model.js';
 import TeachingContract from './teachingContract.model.js';
 import TeachingContractCourse from './teachingContractCourse.model.js';
+import NewContract from './newContract.model.js';
+import ContractItem from './contractItem.model.js';
 
 // Set up associations
 
@@ -199,6 +201,17 @@ Course.hasMany(TeachingContractCourse, { foreignKey: 'course_id' });
 TeachingContractCourse.belongsTo(ClassModel, { foreignKey: 'class_id', onDelete: 'SET NULL', onUpdate: 'CASCADE' });
 ClassModel.hasMany(TeachingContractCourse, { foreignKey: 'class_id' });
 
+// Contract items (used by teaching contracts and simple contracts)
+TeachingContract.hasMany(ContractItem, { foreignKey: 'contract_id', as: 'contractItems' });
+ContractItem.belongsTo(TeachingContract, { foreignKey: 'contract_id', as: 'teachingContract' });
+// Legacy/simple contract associations preserved
+NewContract.hasMany(ContractItem, { foreignKey: 'contract_id', as: 'items' });
+ContractItem.belongsTo(NewContract, { foreignKey: 'contract_id', as: 'contract' });
+NewContract.belongsTo(User, { foreignKey: 'lecturer_user_id', as: 'lecturer', onDelete: 'CASCADE', onUpdate: 'CASCADE' });
+User.hasMany(NewContract, { foreignKey: 'lecturer_user_id', as: 'itemizedContracts' });
+NewContract.belongsTo(User, { foreignKey: 'created_by', as: 'creator', onDelete: 'RESTRICT', onUpdate: 'CASCADE' });
+User.hasMany(NewContract, { foreignKey: 'created_by', as: 'createdItemizedContracts' });
+
 // Candidate - CandidateQuestion - InterviewQuestion relationships
 Candidate.hasMany(CandidateQuestion, {
   foreignKey: 'candidate_id',
@@ -250,7 +263,9 @@ export {
   CandidateQuestion,
   University,
   TeachingContract,
-  TeachingContractCourse
+  TeachingContractCourse,
+  NewContract,
+  ContractItem
 };
 
 // Default export (User for backward compatibility)

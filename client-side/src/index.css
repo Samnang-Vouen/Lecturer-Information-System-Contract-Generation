@@ -38,6 +38,7 @@ button, a, input, textarea, select {
   transition: all 0.2s ease-in-out;
 }
 
+
 /* Global interactive cursor styles */
 @layer base {
 	/* Show pointer for common interactive elements */
@@ -144,6 +145,19 @@ input[type=number] { -moz-appearance: textfield; appearance: textfield; }
 input[type=number] { color-scheme: light; }
 
 /* Chrome autofill enhanced styling */
+
+/* Hide native date picker icon (we use a custom calendar button) */
+input[type="date"]::-webkit-calendar-picker-indicator { display: none; -webkit-appearance: none; }
+input[type="date"]::-webkit-inner-spin-button { display: none; }
+input[type="date"]::-webkit-clear-button { display: none; }
+/* Keep the popup white and avoid UA theming conflicts */
+input[type="date"] { appearance: textfield; color-scheme: light; background-color:#fff; }
+/* If you prefer to HIDE the spinner entirely (uncomment below) */
+/*
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin:0; }
+*/
+/* Chrome autofill */
 input:-webkit-autofill, textarea:-webkit-autofill, select:-webkit-autofill {
 	-webkit-text-fill-color: #000 !important;
 	transition: background-color 5000s ease-in-out 0s;

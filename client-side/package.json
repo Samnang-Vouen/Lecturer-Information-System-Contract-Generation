@@ -25,6 +25,7 @@
     "framer-motion": "^12.23.12",
     "libphonenumber-js": "^1.12.15",
     "lucide-react": "^0.539.0",
+    "pdfmake": "^0.2.20",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-hot-toast": "^2.5.2",

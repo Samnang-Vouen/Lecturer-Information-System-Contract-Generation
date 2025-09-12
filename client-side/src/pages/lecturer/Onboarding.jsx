@@ -223,7 +223,7 @@ export default function Onboarding(){
     if (!q) return [];
     return universities
       .map(u => u.name)
-      .filter(u => u.toLowerCase().includes(q))
+      .filter(u => u.toLowerCase().startsWith(q))
       .slice(0, 8);
   }, [formData.universityName, universities]);
   // If the input exactly matches a known university, hide suggestions
@@ -239,7 +239,7 @@ export default function Onboarding(){
     if (!q) return [];
     return majors
       .map(m => m.name)
-      .filter(m => m.toLowerCase().includes(q))
+  .filter(m => m.toLowerCase().startsWith(q))
       .slice(0, 8);
   }, [formData.majorName, majors]);
   
@@ -255,7 +255,7 @@ export default function Onboarding(){
   const countrySuggestions = useMemo(() => {
     const q = String(formData.country || '').trim().toLowerCase();
     if (!q) return [];
-    return countryList.filter(c => c.toLowerCase().includes(q)).slice(0, 8);
+  return countryList.filter(c => c.toLowerCase().startsWith(q)).slice(0, 8);
   }, [formData.country, countryList]);
   // If the input exactly matches a known country, hide suggestions
   const countryHasExactMatch = useMemo(() => {

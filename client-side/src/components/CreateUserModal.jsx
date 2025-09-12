@@ -150,7 +150,7 @@ export default function CreateUserModal({ isOpen, onClose, onUserCreated }) {
                 {/* Full Name */}
                 <div>
                   <label htmlFor="fullName" className="block text-sm font-medium text-gray-700 mb-1">
-                    Full Name
+                    Full Name <span className="text-red-500" aria-hidden="true">*</span>
                   </label>
                   <input
                     type="text"
@@ -171,7 +171,7 @@ export default function CreateUserModal({ isOpen, onClose, onUserCreated }) {
                 {/* Email */}
                 <div>
                   <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
-                    Email
+                    Email <span className="text-red-500" aria-hidden="true">*</span>
                   </label>
                   <input
                     type="email"
@@ -192,7 +192,7 @@ export default function CreateUserModal({ isOpen, onClose, onUserCreated }) {
                 {/* Role */}
                 <div>
                   <label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-1">
-                    Role
+                    Role <span className="text-red-500" aria-hidden="true">*</span>
                   </label>
                   <select
                     id="role"
@@ -218,7 +218,7 @@ export default function CreateUserModal({ isOpen, onClose, onUserCreated }) {
                 {/* Department */}
                 <div>
                   <label htmlFor="department" className="block text-sm font-medium text-gray-700 mb-1">
-                    Department
+                    Department <span className="text-red-500" aria-hidden="true">*</span>
                   </label>
                   <select
                     id="department"

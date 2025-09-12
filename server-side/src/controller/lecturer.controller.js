@@ -298,9 +298,10 @@ export const getLecturerDetail = async (req, res) => {
       status: profile.User?.status,
       department: displayDepartment,
       position: profile.position,
-  occupation: profile.occupation || null,
-  place: profile.place || null,
+      occupation: profile.occupation || null,
+      place: profile.place || null,
       phone: profile.phone_number || null,
+      short_bio: profile.short_bio || null,
       departments,
       courses,
       coursesCount: courses.length,
@@ -422,11 +423,15 @@ export const updateLecturerProfile = async (req, res) => {
     const profile = await LecturerProfile.findOne({ where: { user_id: userId } });
     if(!profile) return res.status(404).json({ message: 'Lecturer not found' });
     
-    const { qualifications, research_fields, phone_number, university, major } = req.body;
+  const { qualifications, short_bio, research_fields, phone_number, university, major, bank_name, account_name, account_number } = req.body;
     const patch = {};
     
     if(typeof qualifications === 'string') patch.qualifications = qualifications;
+  if(typeof short_bio === 'string') patch.short_bio = short_bio;
     if(typeof phone_number === 'string') patch.phone_number = phone_number.trim();
+  if(typeof bank_name === 'string') patch.bank_name = bank_name.trim();
+  if(typeof account_name === 'string') patch.account_name = account_name.trim();
+  if(typeof account_number === 'string') patch.account_number = account_number.trim();
     
     // Handle research fields
     if (research_fields) {
@@ -489,10 +494,14 @@ export const updateLecturerProfile = async (req, res) => {
     return res.json({ 
       message: 'Profile updated', 
       qualifications: profile.qualifications, 
+  short_bio: profile.short_bio,
       research_fields: profile.research_fields,
       researchFields: currentResearchFields,
       university: profile.university,
-      major: profile.major
+  major: profile.major,
+  bank_name: profile.bank_name,
+  account_name: profile.account_name,
+  account_number: profile.account_number
     });
   } catch (e) {
     console.error('[updateLecturerProfile] error', e);

@@ -87,6 +87,21 @@ const navItems = [
     category: null
   },
   {
+    title: "Management",
+    href: "/management",
+    icon: FileBarChart,
+    roles: ["management"],
+    category: "management",
+    hasSubmenu: true
+  },
+  {
+    title: "Account Settings",
+    href: "/management/profile",
+    icon: Settings,
+    roles: ["management"],
+    category: null
+  },
+  {
     title: "System Administration",
     href: "/superadmin/system",
     icon: Shield,
@@ -107,19 +122,6 @@ const navItems = [
     icon: Settings,
     roles: ["lecturer"],
     category: null
-  },
-  // Management minimal menu
-  {
-    title: "My Profile",
-    href: "/management/profile",
-    icon: UserCheck,
-    roles: ["management"],
-  },
-  {
-    title: "Contract Management",
-    href: "/management/contracts",
-    icon: FileText,
-    roles: ["management"],
   },
 ];
 
@@ -315,6 +317,15 @@ export function Sidebar({ user: userProp, onLogout, mobileOpen = false, onClose 
                     <span>Course Mapping</span>
                   </div>
                 </Link>
+                <Link to="/admin/contracts" onClick={isMobile ? onClose : undefined}>
+                  <div className={cn(
+                    "flex items-center gap-3 px-4 py-2 rounded-lg transition-all duration-200 hover:bg-blue-50",
+                    location.pathname.includes('/admin/contracts') ? "bg-blue-50 text-blue-600" : "text-gray-600 hover:text-blue-600"
+                  )} style={sidebarFont}>
+                    <FileText className="h-4 w-4" />
+                    <span>Contract Generation</span>
+                  </div>
+                </Link>
               </>
             )}
             {item.category === 'personnel' && (
@@ -349,6 +360,19 @@ export function Sidebar({ user: userProp, onLogout, mobileOpen = false, onClose 
                   <span>User Management</span>
                 </div>
               </Link>
+            )}
+            {item.category === 'management' && (
+              <>
+                <Link to="/management/contracts" onClick={isMobile ? onClose : undefined}>
+                  <div className={cn(
+                    "flex items-center gap-3 px-4 py-2 rounded-lg transition-all duration-200 hover:bg-blue-50",
+                    location.pathname.includes('/management/contracts') ? "bg-blue-50 text-blue-600" : "text-gray-600 hover:text-blue-600"
+                  )} style={sidebarFont}>
+                    <Briefcase className="h-4 w-4" />
+                    <span>Contract Management</span>
+                  </div>
+                </Link>
+              </>
             )}
           </div>
         )}

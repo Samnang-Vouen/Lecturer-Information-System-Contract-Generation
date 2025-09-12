@@ -42,7 +42,8 @@ export default function LoginForm() {
     const navigate = useNavigate();
     const { login, isLoggingIn, authUser, error: authError } = useAuthStore();
     
-    const EMAIL_REGEX = /^[A-Za-z0-9._%+-]+@cadt\.edu\.kh$/i;
+    // Central email regex (case-insensitive)
+    const EMAIL_REGEX = /^[A-Za-z0-9._%+\-]+@cadt\.edu\.kh$/i;
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
@@ -382,7 +383,7 @@ export default function LoginForm() {
                 </div>
             </div>
 
-            <style jsx>{`
+            <style>{`
                 @keyframes gradient-x {
                     0%, 100% {
                         background-size: 200% 200%;
@@ -488,6 +489,6 @@ export default function LoginForm() {
                 .animate-shake { animation: shake 0.6s ease-in-out; }
                 .hover\\:scale-102:hover { transform: scale(1.02); }
             `}</style>
-        </div>
+    </div>
     );
 }

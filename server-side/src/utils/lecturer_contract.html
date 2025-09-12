@@ -8,6 +8,13 @@
       size: A4;
       margin: 40px;
     }
+    /* Ensure Times New Roman is used when available */
+    @font-face {
+      font-family: 'Times New Roman';
+      src: local('Times New Roman'), local('TimesNewRomanPSMT'), local('TimesNewRomanPS'), local('TimesNewRoman');
+      font-weight: normal;
+      font-style: normal;
+    }
     body { 
       font-family: 'Times New Roman', Times, serif; 
       font-size: 12pt;
@@ -73,6 +80,11 @@
     }
     .signature { margin-top: 20px; display: flex; justify-content: space-between; }
     .signature div { text-align: center; width: 45%; }
+  /* Signature alignment helpers */
+  .sig-wrap { width: 260px; margin: 0 auto; text-align: center; }
+  .sig-box { height: 70px; display: flex; align-items: center; justify-content: center; }
+  .sig-row { display: block; white-space: nowrap; }
+  .nowrap { white-space: nowrap; }
   </style>
 </head>
 <body>
@@ -86,7 +98,7 @@
 
   <p class="first-indent">
     Employment Agreement, between <span class="bold">Cambodia Academy of Digital Technology (The “CADT”)</span>
-    and <span class="bold">{lecturer_name}</span> (The “Lecturer”).
+  and <span class="bold">{lecturer_name}</span> (The “{positionEn}”).
   </p>
 
   <p>
@@ -104,7 +116,7 @@
 
   <p class="hanging-indent"><span class="bold">3.&nbsp;&nbsp;Duties and Position:</span>  
     The <span class="bold">CADT</span> hires the Lecturer to teach <span class="bold">{subject}</span> in Term <span class="bold">{term}</span>,
-    Generation <span class="bold">{gen}</span>, Group <span class="bold">{group}</span>, <span class="bold">Department</span> of <span class="bold">{dept_name}</span>
+    Generation <span class="bold">{gen}</span>, <span class="bold">Department</span> of <span class="bold">{dept_name}</span>
   </p>
 
   <p class="first-indent">The Lecturer accepts the following duties:</p>
@@ -112,46 +124,11 @@
   <table>
     <tr style="background:#b3d1ff; color:#003366; font-weight:bold;">
       <th style="width:40px; text-align:center; background:#b3d1ff; color:#003366; font-weight:bold;">No.</th>
-      <th style="background:#b3d1ff; color:#003366; font-weight:bold;">Items</th>
-      <th style="background:#b3d1ff; color:#003366; font-weight:bold;">Description</th>
+  <th style="background:#b3d1ff; color:#003366; font-weight:bold;">Duties</th>
     </tr>
+    {items_rows}
     <tr>
-      <td style="width:40px; text-align:center; color:#003366; font-weight:bold;">1</td>
-      <td>{course_name}</td>
-      <td>{description}</td>
-    </tr>
-    <tr>
-        <td style="width:40px; text-align:center; color:#003366; font-weight:bold;">2</td>
-        <td></td>
-        <td></td>
-    </tr>
-    <tr>
-        <td style="width:40px; text-align:center; color:#003366; font-weight:bold;">3</td>
-        <td></td>
-        <td></td>
-    </tr>
-    <tr>
-        <td style="width:40px; text-align:center; color:#003366; font-weight:bold;">4</td>
-        <td></td>
-        <td></td>
-    </tr>
-    <tr>
-        <td style="width:40px; text-align:center; color:#003366; font-weight:bold;">5</td>
-        <td></td>
-        <td></td>
-    </tr>
-    <tr>
-        <td style="width:40px; text-align:center; color:#003366; font-weight:bold;">6</td>
-        <td></td>
-        <td></td>
-    </tr>
-    <tr>
-        <td style="width:40px; text-align:center; color:#003366; font-weight:bold;">7</td>
-        <td></td>
-        <td></td>
-    </tr>
-    <tr>
-      <td colspan="3" style="background:#b3d1ff; color:#003366; font-size:11pt; font-weight:bold; text-align:right;">TOTAL FEE: {total_salary} KHR</td>
+      <td colspan="2" style="background:#b3d1ff; color:#003366; font-size:11pt; font-weight:bold; text-align:right;">TOTAL FEE: {total_salary} KHR</td>
     </tr>
   </table>
 
@@ -163,16 +140,22 @@
 
   <div class="signature">
     <div>
-      <br><br><br>
-      _________________________ <br>
-      On behalf of CADT <br>
-      Date: {sign_date}
+      <div class="sig-wrap">
+        <div class="sig-box">{management_signature}</div>
+        <div>_________________</div>
+        <!-- <div class="sig-row"><span>On behalf of CADT</span><br><span>Date: {sign_date}</span></div> -->
+        <div class="nowrap">On behalf of CADT</div>
+        <div class="nowrap">Date: {sign_date}</div>
+      </div>
     </div>
     <div>
-      <br><br><br>
-      _________________________ <br>
-      {lecturer_name} <br>
-      Date: {sign_date}
+      <div class="sig-wrap">
+        <div class="sig-box">{lecturer_signature}</div>
+        <div>_________________</div>
+        <!-- <div class="sig-row"><span>{lecturer_name}</span><br><span>Date: {sign_date}</span></div> -->
+        <div class="nowrap">{lecturer_name}</div>
+        <div class="nowrap">Date: {sign_date}</div>
+      </div>
     </div>
   </div>
 
