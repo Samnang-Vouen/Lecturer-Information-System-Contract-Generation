@@ -14,6 +14,7 @@ export default function LecturerContracts(){
   const [limit] = useState(10);
   const [total, setTotal] = useState(0);
   const [q, setQ] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL');
   const [hourlyRate, setHourlyRate] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [openId, setOpenId] = useState(null);
@@ -95,14 +96,64 @@ export default function LecturerContracts(){
   };
 
   const statusLabel = (s) => {
+    // s is a display status: WAITING_LECTURER | WAITING_MANAGEMENT | COMPLETED | CONTRACT_ENDED | DRAFT
     switch (s) {
-      case 'DRAFT': return { label: 'waiting lecturer', class: 'bg-amber-50 text-amber-700 border-amber-200', icon: Clock };
-      case 'MANAGEMENT_SIGNED': return { label: 'waiting lecturer', class: 'bg-amber-50 text-amber-700 border-amber-200', icon: Clock };
-      case 'LECTURER_SIGNED': return { label: 'waiting management', class: 'bg-blue-50 text-blue-700 border-blue-200', icon: AlertCircle };
-      case 'COMPLETED': return { label: 'completed', class: 'bg-green-50 text-green-700 border-green-200', icon: CheckCircle2 };
-      default: return { label: 'draft', class: 'bg-gray-100 text-gray-700 border-gray-200', icon: FileText };
+      case 'WAITING_LECTURER':
+        return { label: 'waiting lecturer', class: 'bg-amber-50 text-amber-700 border-amber-200', icon: Clock };
+      case 'WAITING_MANAGEMENT':
+        return { label: 'waiting management', class: 'bg-blue-50 text-blue-700 border-blue-200', icon: AlertCircle };
+      case 'COMPLETED':
+        return { label: 'completed', class: 'bg-green-50 text-green-700 border-green-200', icon: CheckCircle2 };
+      case 'CONTRACT_ENDED':
+        return { label: 'Contract Ended', class: 'bg-gray-100 text-red-700 border-red-200', icon: AlertCircle };
+      default:
+        return { label: 'draft', class: 'bg-gray-100 text-gray-700 border-gray-200', icon: FileText };
     }
   };
+
+  // Compute whether a contract is expired and its display status
+  const isExpired = (c) => {
+    const end = c?.end_date || c?.endDate;
+    if (!end) return false;
+    try {
+      const endD = new Date(end);
+      if (isNaN(endD.getTime())) return false;
+      const today = new Date();
+      // Compare by date only
+      endD.setHours(0,0,0,0);
+      today.setHours(0,0,0,0);
+      return endD < today;
+    } catch { return false; }
+  };
+
+  const getDisplayStatus = (c) => {
+    if (isExpired(c)) return 'CONTRACT_ENDED';
+    switch (c?.status) {
+      case 'DRAFT':
+      case 'MANAGEMENT_SIGNED':
+        return 'WAITING_LECTURER';
+      case 'LECTURER_SIGNED':
+        return 'WAITING_MANAGEMENT';
+      case 'COMPLETED':
+        return 'COMPLETED';
+      default:
+        return 'DRAFT';
+    }
+  };
+
+  const filteredContracts = useMemo(() => {
+    const list = contracts || [];
+    if (statusFilter === 'ALL') return list;
+    return list.filter(c => {
+      const ds = getDisplayStatus(c);
+      return (
+        (statusFilter === 'WAITING_LECTURER' && ds === 'WAITING_LECTURER') ||
+        (statusFilter === 'WAITING_MANAGEMENT' && ds === 'WAITING_MANAGEMENT') ||
+        (statusFilter === 'COMPLETED' && ds === 'COMPLETED') ||
+        (statusFilter === 'CONTRACT_ENDED' && ds === 'CONTRACT_ENDED')
+      );
+    });
+  }, [contracts, statusFilter]);
   const uploadSignature = async (id, file) => {
     if (!file) return;
     setUploading(true);
@@ -122,9 +173,16 @@ export default function LecturerContracts(){
   return (
     <div className='p-4 md:p-6 space-y-6'>
       {/* Page header */}
-      <div>
-        <h1 className="text-2xl md:text-3xl font-bold tracking-tight">My Contracts</h1>
-        <p className="text-gray-600 mt-1">View and sign your lecturer contracts</p>
+      <div className="flex items-center gap-3">
+        <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-sm">
+          <FileText className="w-5 h-5 text-white" />
+        </div>
+        <div>
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-purple-600">
+            My Contracts
+          </h1>
+          <p className="text-gray-600">View and sign your contracts</p>
+        </div>
       </div>
 
       {/* Pending contracts card */}
@@ -148,13 +206,13 @@ export default function LecturerContracts(){
               const period = startDate && endDate ? `${formatMDY(startDate)} - ${formatMDY(endDate)}` : `Term ${c.term} • ${c.academic_year}`;
               const rate = hourlyRate;
               return (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-4 flex items-center justify-between">
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
                   <div>
                     <div className="font-semibold">{formattedId}</div>
                     <div className="text-sm text-amber-900 mt-1">{rate != null ? `$${rate}/hr` : '-'} • {hours} hours</div>
                     <div className="text-sm text-amber-900">{period}</div>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <Button size="sm" variant="outline" onClick={() => previewPdfFor(c.id)} title="Preview contract"><Eye className="w-4 h-4"/> Review</Button>
                     <Button size="sm" onClick={() => { setSelectedContract(c); setSignOpen(true); }}><PenTool className="w-4 h-4"/> Sign Now</Button>
                   </div>
@@ -175,23 +233,39 @@ export default function LecturerContracts(){
           <CardDescription>Complete history of your lecturer contracts</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="rounded-xl border bg-white shadow-sm overflow-x-auto">
-            <div className="px-4 py-3 border-b flex items-center">
-              <div className="ml-auto text-sm text-gray-600 hidden md:block">{loading ? 'Loading…' : `${(contracts?.length||0)} of ${total}`}</div>
+          <div className="rounded-xl border bg-white shadow-sm overflow-x-auto w-full">
+            <div className="px-4 py-3 border-b flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <label htmlFor="statusFilter" className="text-sm text-gray-700">Status</label>
+                <select
+                  id="statusFilter"
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="text-sm border rounded-md px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-auto"
+                >
+                  <option value="ALL">All statuses</option>
+                  <option value="WAITING_LECTURER">Waiting Lecturer</option>
+                  <option value="WAITING_MANAGEMENT">Waiting Management</option>
+                  <option value="COMPLETED">Completed</option>
+                  <option value="CONTRACT_ENDED">Contract Ended</option>
+                </select>
+              </div>
+              <div className="ml-auto text-sm text-gray-600 hidden md:block">{loading ? 'Loading…' : `${(filteredContracts?.length||0)} of ${total}`}</div>
             </div>
+            <div className="min-w-[720px]">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Contract ID</TableHead>
-                  <TableHead>Period</TableHead>
-                  <TableHead>Rate & Hours</TableHead>
-                  <TableHead>Total Value</TableHead>
+                  <TableHead className="hidden sm:table-cell">Period</TableHead>
+                  <TableHead className="hidden md:table-cell">Rate & Hours</TableHead>
+                  <TableHead className="hidden md:table-cell">Total Value</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {(contracts || []).map(c => {
+                {(filteredContracts || []).map(c => {
                   const createdYear = c.created_at ? new Date(c.created_at).getFullYear() : new Date().getFullYear();
                   const formattedId = `CTR-${createdYear}-${String(c.id).padStart(3, '0')}`;
                   const hours = (c.courses || []).reduce((a, cc) => a + (cc.hours || 0), 0);
@@ -208,21 +282,29 @@ export default function LecturerContracts(){
                   );
                   const rate = hourlyRate; // from lecturer profile
                   const totalValue = rate != null ? rate * hours : null;
-                  const st = statusLabel(c.status);
+                  const displayStatus = getDisplayStatus(c);
+                  const st = statusLabel(displayStatus);
                   const canSign = c.status === 'DRAFT' || c.status === 'MANAGEMENT_SIGNED';
                   return (
                     <TableRow key={c.id}>
                       <TableCell>
                         <div className="font-medium">{formattedId}</div>
+                        {/* Mobile-only summary */}
+                        <div className="sm:hidden mt-1 text-xs text-gray-600 space-y-0.5">
+                          <div>
+                            {hasBothDates ? `${formatMDY(startDate)} → ${formatMDY(endDate)}` : `Term ${c.term} • ${c.academic_year}`}
+                          </div>
+                          <div>{rate != null ? `$${rate}/hr` : '-'} • {hours}h</div>
+                        </div>
                       </TableCell>
-                      <TableCell>{period}</TableCell>
-                      <TableCell>
+                      <TableCell className="hidden sm:table-cell">{period}</TableCell>
+                      <TableCell className="hidden md:table-cell">
                         <div className="text-sm leading-tight">
                           <div className="font-medium">{rate != null ? `$${rate}/hr` : '-'}</div>
                           <div className="text-gray-600">{hours}h total</div>
                         </div>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="hidden md:table-cell">
                         <div className="text-sm font-medium">{totalValue != null ? `$${Math.round(totalValue).toLocaleString()}` : '-'}</div>
                       </TableCell>
                       <TableCell>
@@ -232,7 +314,7 @@ export default function LecturerContracts(){
                         </span>
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex gap-2 justify-end items-center">
+                        <div className="flex flex-wrap gap-1 sm:gap-2 justify-end items-center">
                           <Button size="sm" variant="outline" onClick={() => previewPdfFor(c.id)} title="Preview contract"><Eye className="w-4 h-4" /></Button>
                           {canSign && (
                             <Button size="sm" onClick={() => { setSelectedContract(c); setSignOpen(true); }} title="Sign contract"><PenTool className="w-4 h-4" /></Button>
@@ -250,6 +332,7 @@ export default function LecturerContracts(){
                 )}
               </TableBody>
             </Table>
+            </div>
           </div>
         </CardContent>
       </Card>

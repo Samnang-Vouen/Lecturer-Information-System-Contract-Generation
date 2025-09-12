@@ -305,8 +305,8 @@ export default function LoginForm() {
                                             aria-label={showPassword ? 'Hide password' : 'Show password'}
                                         >
                                             {showPassword ? 
-                                                <EyeOff className="h-5 w-5 animate-fade-in" /> : 
-                                                <Eye className="h-5 w-5 animate-fade-in" />
+                                                <Eye className="h-5 w-5 animate-fade-in" /> : 
+                                                <EyeOff className="h-5 w-5 animate-fade-in" />
                                             }
                                         </button>
                                         <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-blue-600/10 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>

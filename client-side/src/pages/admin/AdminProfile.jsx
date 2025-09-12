@@ -279,9 +279,9 @@ export default function AdminProfile() {
                         aria-label={showPw[key] ? "Hide password" : "Show password"}
                       >
                         {showPw[key] ? (
-                          <EyeOff className="w-5 h-5" />
-                        ) : (
                           <Eye className="w-5 h-5" />
+                        ) : (
+                          <EyeOff className="w-5 h-5" />
                         )}
                       </button>
                     </div>

@@ -87,15 +87,14 @@ const navItems = [
     category: null
   },
   {
-    title: "Management",
-    href: "/management",
-    icon: FileBarChart,
+    title: "Contract Management",
+    href: "/management/contracts",
+    icon: FileText,
     roles: ["management"],
-    category: "management",
-    hasSubmenu: true
+    category: null
   },
   {
-    title: "Account Settings",
+    title: "Profile Settings",
     href: "/management/profile",
     icon: Settings,
     roles: ["management"],
@@ -218,6 +217,16 @@ export function Sidebar({ user: userProp, onLogout, mobileOpen = false, onClose 
       management: 'Management'
     };
     return roleLabels[role] || role;
+  };
+
+  const getPanelLabel = (role) => {
+    const panel = {
+      superadmin: 'System Panel',
+      admin: 'Admin Panel',
+      management: 'Management Panel',
+      lecturer: 'Lecturer Panel'
+    };
+    return panel[role] || 'Panel';
   };
 
   const renderNavItem = (item, isMobile = false) => {
@@ -361,19 +370,7 @@ export function Sidebar({ user: userProp, onLogout, mobileOpen = false, onClose 
                 </div>
               </Link>
             )}
-            {item.category === 'management' && (
-              <>
-                <Link to="/management/contracts" onClick={isMobile ? onClose : undefined}>
-                  <div className={cn(
-                    "flex items-center gap-3 px-4 py-2 rounded-lg transition-all duration-200 hover:bg-blue-50",
-                    location.pathname.includes('/management/contracts') ? "bg-blue-50 text-blue-600" : "text-gray-600 hover:text-blue-600"
-                  )} style={sidebarFont}>
-                    <Briefcase className="h-4 w-4" />
-                    <span>Contract Management</span>
-                  </div>
-                </Link>
-              </>
-            )}
+            {/* no management submenu */}
           </div>
         )}
       </div>
@@ -399,7 +396,7 @@ export function Sidebar({ user: userProp, onLogout, mobileOpen = false, onClose 
               </div>
               <div className="flex flex-col">
                 <span style={sidebarHeadingFont}>LCMS</span>
-                <span className="text-xs text-gray-500" style={sidebarFont}>Admin Panel</span>
+                <span className="text-xs text-gray-500" style={sidebarFont}>{getPanelLabel(user.role)}</span>
               </div>
             </div>
             <button
@@ -495,7 +492,7 @@ export function Sidebar({ user: userProp, onLogout, mobileOpen = false, onClose 
             </div>
             <div className="flex flex-col">
               <span style={sidebarHeadingFont}>LCMS</span>
-              <span className="text-xs text-gray-500" style={sidebarFont}>Admin Panel</span>
+              <span className="text-xs text-gray-500" style={sidebarFont}>{getPanelLabel(user.role)}</span>
             </div>
           </div>
           <button 

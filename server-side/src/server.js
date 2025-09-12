@@ -10,6 +10,7 @@ import profileRoutes from './route/profile.route.js';
 import interviewRoutes from './route/interview.route.js';
 import userRoutes from './route/user.route.js';
 import lecturerRoutes from './route/lecturer.route.js';
+import lecturerSelfRoutes from './route/lecturerSelf.route.js';
 import lecturerProfileRoutes from './route/lecturerProfile.route.js';
 import onboardingRoutes from './route/onboarding.route.js';
 import classRoutes from './route/class.route.js';
@@ -21,6 +22,7 @@ import universityRoutes from './route/university.route.js';
 import majorRoutes from './route/major.route.js';
 import teachingContractRoutes from './route/teachingContract.route.js';
 import contractsRoutes from './route/contracts.route.js';
+import lecturerDashboardRoutes from './route/lecturerDashboard.route.js';
 import { seedInterviewQuestions } from './utils/seedInterviewQuestions.js';
 import { seedResearchFields } from './utils/seedResearchFields.js';
 import { seedUniversities } from './utils/seedUniversities.js';
@@ -66,6 +68,7 @@ app.use('/api/users', userRoutes);
 // which is admin-only, causing 403 errors for lecturers fetching their onboarding status.
 app.use('/api/lecturers/onboarding', onboardingRoutes);
 app.use('/api/lecturers', lecturerRoutes);
+app.use('/api/lecturer', lecturerSelfRoutes);
 app.use('/api/lecturer-profile', lecturerProfileRoutes);
 app.use('/api/classes', classRoutes);
 app.use('/api/courses', courseRoutes);
@@ -76,6 +79,7 @@ app.use('/api/universities', universityRoutes);
 app.use('/api/majors', majorRoutes);
 app.use('/api/teaching-contracts', teachingContractRoutes);
 app.use('/api/contracts', contractsRoutes);
+app.use('/api/lecturer-dashboard', lecturerDashboardRoutes);
 // Serve uploaded lecturer files (CVs, syllabi)
 app.use('/uploads', express.static('uploads'));
 // Swagger/OpenAPI docs

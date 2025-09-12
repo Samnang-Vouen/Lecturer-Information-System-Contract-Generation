@@ -1197,7 +1197,7 @@ export default function Onboarding(){
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 px-3 py-4 sm:p-6">
+    <div className="min-h-screen bg-gray-50 p-4 sm:p-6 lg:p-8">
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-6 sm:mb-8">
             <h1 className="text-2xl sm:text-3xl font-bold text-blue-800 mb-2">
@@ -1280,7 +1280,7 @@ export default function Onboarding(){
             variant="outline" 
             onClick={handlePrevious} 
             disabled={currentStep === 1}
-            className="w-full sm:w-auto px-4 py-2 border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed rounded-md flex items-center"
+            className="w-full sm:w-auto px-4 py-2 border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed rounded-md flex items-center focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
           >
             <ChevronLeft className="h-4 w-4 mr-1" />Previous
           </Button>
@@ -1288,7 +1288,7 @@ export default function Onboarding(){
             <Button 
               onClick={handleSubmit} 
               disabled={isSubmitting}
-              className="w-full sm:w-auto px-6 py-2 bg-black text-white hover:bg-gray-800 rounded-md flex items-center disabled:opacity-50"
+              className="w-full sm:w-auto px-6 py-2 bg-black text-white hover:bg-gray-800 rounded-md flex items-center disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
             >
               {isSubmitting ? (
                 <span className="flex items-center">Submitting...</span>
@@ -1299,7 +1299,7 @@ export default function Onboarding(){
           ) : (
             <Button 
               onClick={handleNext}
-              className="w-full sm:w-auto px-6 py-2 bg-black text-white hover:bg-gray-800 rounded-md flex items-center"
+              className="w-full sm:w-auto px-6 py-2 bg-black text-white hover:bg-gray-800 rounded-md flex items-center focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
             >
               Next <ChevronRight className="h-4 w-4 ml-1" />
             </Button>
