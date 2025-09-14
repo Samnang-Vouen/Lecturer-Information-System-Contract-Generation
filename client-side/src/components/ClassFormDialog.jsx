@@ -14,12 +14,36 @@ export default function ClassFormDialog({ open, onOpenChange, onSubmit, classDat
     const count = 5; // current year + next 4 years
     return Array.from({ length: count }, (_, i) => `${start + i}-${start + i + 1}`);
   }, []);
-  // Map course_code -> course_name for display
-  const codeToName = React.useMemo(() => {
-    const map = new Map();
-    const list = Array.isArray(courseCatalog) ? courseCatalog : (Array.isArray(courseCatalog.data) ? courseCatalog.data : []);
-    list.forEach(c => { if (c?.course_code) map.set(c.course_code, c.course_name || c.course_code); });
-    return map;
+  // Build maps to resolve course entries to human names (code/id/object -> name)
+  const { codeToName, idToName } = React.useMemo(() => {
+    const codeMap = new Map();
+    const idMap = new Map();
+    const list = Array.isArray(courseCatalog)
+      ? courseCatalog
+      : (Array.isArray(courseCatalog.data) ? courseCatalog.data : []);
+    const getName = (c) => (
+      c?.course_name || c?.name_en || c?.name || c?.title || c?.Course?.name_en || c?.Course?.name || ''
+    );
+    const getCode = (c) => (
+      c?.course_code || c?.code || c?.Course?.code || ''
+    );
+    const getId = (c) => (
+      c?.id ?? c?.course_id ?? c?.Course?.id
+    );
+    list.forEach((c) => {
+      const name = String(getName(c) || '').trim();
+      const code = String(getCode(c) || '').trim();
+      const id = getId(c);
+      if (code) {
+        codeMap.set(code, name || '');
+        codeMap.set(code.toUpperCase(), name || '');
+        codeMap.set(code.toLowerCase(), name || '');
+      }
+      if (id != null) {
+        idMap.set(String(id), name || '');
+      }
+    });
+    return { codeToName: codeMap, idToName: idMap };
   }, [courseCatalog]);
 
   // Validation: all fields must be filled; total_class must be a positive integer
@@ -43,7 +67,7 @@ export default function ClassFormDialog({ open, onOpenChange, onSubmit, classDat
   }, [classData, isEdit, onAssignCourses, selectedCourses]);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="w-[95vw] sm:max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-xl font-semibold text-gray-800 tracking-tight">
             {isEdit ? "Edit Class" : "Add New Class"}
@@ -63,26 +87,50 @@ export default function ClassFormDialog({ open, onOpenChange, onSubmit, classDat
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1">
               <Label htmlFor="name" className="text-sm font-medium text-gray-700">Class Name <span className="text-red-500" aria-hidden="true">*</span></Label>
-              <Input id="name" className="focus:ring-blue-500" placeholder="Gen10" value={classData.name} onChange={e => setClassData({ ...classData, name: e.target.value })} />
+              <Input
+                id="name"
+                className="focus:ring-blue-500 h-10 sm:h-9 text-sm placeholder:text-sm placeholder:text-gray-500"
+                placeholder="GEN10"
+                value={classData.name}
+                onBeforeInput={(e) => {
+                  // Block any non A-Z or 0-9 characters at input time
+                  if (e.data && /[^A-Za-z0-9]/.test(e.data)) {
+                    e.preventDefault();
+                  }
+                }}
+                onChange={(e) => {
+                  const raw = e.target.value || '';
+                  // Keep only English letters and numbers, and uppercase letters
+                  const sanitized = raw.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+                  setClassData({ ...classData, name: sanitized });
+                }}
+                pattern="[A-Za-z0-9]*"
+                title="Only English letters (A-Z) and numbers (0-9) are allowed; letters are uppercased automatically"
+                autoCapitalize="characters"
+                autoComplete="off"
+                inputMode="text"
+              />
             </div>
             <div className="space-y-1">
               <Label htmlFor="term" className="text-sm font-medium text-gray-700">Term <span className="text-red-500" aria-hidden="true">*</span></Label>
               <Select
                 value={classData.term}
                 onValueChange={value => setClassData({ ...classData, term: value })}
-                placeholder="Select term"
+        placeholder="Select term"
+  buttonClassName="h-10 sm:h-9 text-sm"
               >
                 <SelectItem value="Term 1">Term 1</SelectItem>
                 <SelectItem value="Term 2">Term 2</SelectItem>
                 <SelectItem value="Term 3">Term 3</SelectItem>
               </Select>
             </div>
-            <div className="space-y-1">
+      <div className="space-y-1">
               <Label htmlFor="year_level" className="text-sm font-medium text-gray-700">Year Level <span className="text-red-500" aria-hidden="true">*</span></Label>
               <Select
                 value={classData.year_level}
                 onValueChange={value => setClassData({ ...classData, year_level: value })}
-                placeholder="Select year level"
+        placeholder="Select year level"
+  buttonClassName="h-10 sm:h-9 text-sm"
               >
                 <SelectItem value="Year 1">Year 1</SelectItem>
                 <SelectItem value="Year 2">Year 2</SelectItem>
@@ -96,6 +144,7 @@ export default function ClassFormDialog({ open, onOpenChange, onSubmit, classDat
                 value={classData.academic_year}
                 onValueChange={(value) => setClassData({ ...classData, academic_year: value })}
                 placeholder="Select academic year"
+                buttonClassName="h-10 sm:h-9 text-sm"
               >
                 {academicYearOptions.map((ay) => (
                   <SelectItem key={ay} value={ay}>{ay}</SelectItem>
@@ -109,7 +158,7 @@ export default function ClassFormDialog({ open, onOpenChange, onSubmit, classDat
                 type="number"
                 min="1"
                 placeholder="e.g., 3"
-                className="flex-1 min-w-0"
+                className="flex-1 min-w-0 h-10 sm:h-9 text-sm placeholder:text-sm placeholder:text-gray-500"
                 value={classData.total_class === null || classData.total_class === undefined ? "" : classData.total_class}
                 onChange={e => {
                   const v = e.target.value;
@@ -120,29 +169,50 @@ export default function ClassFormDialog({ open, onOpenChange, onSubmit, classDat
                 }}
               />
             </div>
-            {!isEdit && onAssignCourses && (
+            {onAssignCourses && (
               <div className="space-y-1">
-                <Label htmlFor="assign_courses" className="text-sm font-medium text-gray-700">Assign Courses</Label>
+                <Label htmlFor="assign_courses" className="text-sm font-medium text-gray-700">
+                  Assign Courses <span className="text-red-500" aria-hidden="true">*</span>{ !isEdit }
+                </Label>
                 <Button
                   id="assign_courses"
                   type="button"
                   variant="outline"
-                  className="h-10 w-full justify-center border-blue-200 hover:bg-blue-600 hover:text-white text-blue-700 bg-blue-50"
+                  className="h-10 sm:h-9 py-0 px-3 w-full justify-center border-blue-200 hover:bg-blue-600 hover:text-white text-blue-700 bg-blue-50"
                   onClick={() => onAssignCourses(classData)}
                   title="Assign Courses"
                 >
                   <BookOpen className="h-4 w-4" />
-                  <span className="ml-2 text-sm font-medium">Assign Courses <span className="text-red-500" aria-hidden="true">*</span></span>
+                  <span className="ml-2 text-sm font-medium">Assign Courses</span>
                 </Button>
-                {/* Selected courses preview */}
+                {/* Selected courses preview (names only) */}
                 <div className="pt-2">
                   {Array.isArray(selectedCourses) && selectedCourses.length > 0 ? (
                     <div className="flex flex-wrap gap-1">
-                      {selectedCourses.map((code, idx) => (
-                        <Badge key={`${code}-${idx}`} variant="course" className="text-[10px] px-2 py-0.5">
-                          {codeToName.get(code) || code}
-                        </Badge>
-                      ))}
+                      {selectedCourses.map((entry, idx) => {
+                        let label = '';
+                        if (entry && typeof entry === 'object') {
+                          const name = entry.course_name || entry.name_en || entry.name || entry.title;
+                          const code = entry.course_code || entry.code;
+                          const id = entry.id || entry.course_id;
+                          label = (name && String(name).trim())
+                            || (code && codeToName.get(String(code)))
+                            || (id != null && idToName.get(String(id)))
+                            || '';
+                        } else {
+                          const val = String(entry ?? '').trim();
+                          // Try code match (case-insensitive) then id; do NOT fallback to showing codes
+                          label = codeToName.get(val) || codeToName.get(val.toUpperCase()) || codeToName.get(val.toLowerCase())
+                            || (Number.isFinite(Number(val)) ? idToName.get(val) : '')
+                            || '';
+                        }
+                        if (!label) return null; // skip rendering raw codes
+                        return (
+                          <Badge key={`${String(entry)}-${idx}`} variant="course" className="text-[10px] px-2 py-0.5">
+                            {label}
+                          </Badge>
+                        );
+                      })}
                     </div>
                   ) : (
                     <div className="text-xs text-gray-400 italic">No courses selected</div>
@@ -151,14 +221,24 @@ export default function ClassFormDialog({ open, onOpenChange, onSubmit, classDat
               </div>
             )}
           </div>
-          <Button
-            type="submit"
-            disabled={!allFilled}
-            title={!allFilled ? 'Fill in all fields before submitting' : undefined}
-            className={`w-full shadow-sm ${!allFilled ? 'bg-gray-300 text-gray-600 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}
-          >
-            {isEdit ? "Update Class" : "Add Class"}
-          </Button>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full sm:flex-1"
+              onClick={() => onOpenChange && onOpenChange(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={!allFilled}
+              title={!allFilled ? 'Fill in all fields before submitting' : undefined}
+              className={`w-full sm:flex-1 shadow-sm ${!allFilled ? 'bg-gray-300 text-gray-600 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}
+            >
+              {isEdit ? "Update Class" : "Add Class"}
+            </Button>
+          </div>
         </form>
       </DialogContent>
     </Dialog>

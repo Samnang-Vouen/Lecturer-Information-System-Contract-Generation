@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import puppeteer from 'puppeteer';
 import { fileURLToPath } from 'url';
-import { TeachingContract, TeachingContractCourse, User, LecturerProfile, ClassModel, ContractItem } from '../model/index.js';
+import { TeachingContract, TeachingContractCourse, User, LecturerProfile, ClassModel, ContractItem, Department, Course } from '../model/index.js';
 import sequelize from '../config/db.js';
 import Candidate from '../model/candidate.model.js';
 import multer from 'multer';
@@ -72,6 +72,29 @@ function signatureTag(filePath) {
   }
 }
 
+// Resolve department id for admin/management user; returns null for other roles or missing department
+async function resolveManagerDeptId(req) {
+  try {
+    const role = (req.user?.role || '').toLowerCase();
+    if ((role === 'admin' || role === 'management') && req.user.department_name) {
+      const dept = await Department.findOne({ where: { dept_name: req.user.department_name } });
+      return dept ? dept.id : null;
+    }
+  } catch {}
+  return null;
+}
+
+// Check if a contract belongs to the manager's department (at least one course in that department)
+async function isContractInManagerDept(contractId, req) {
+  const deptId = await resolveManagerDeptId(req);
+  if (!deptId) return true; // not an admin or no department restriction
+  const count = await TeachingContractCourse.count({
+    where: { contract_id: contractId },
+    include: [{ model: Course, attributes: [], required: true, where: { dept_id: deptId } }]
+  });
+  return count > 0;
+}
+
 export async function createDraftContract(req, res) {
   try {
     const { lecturer_user_id, academic_year, term, year_level, start_date, end_date } = req.body;
@@ -111,6 +134,18 @@ export async function createDraftContract(req, res) {
     if (!Number.isInteger(parsedLecturerId)) {
       return res.status(400).json({ message: 'Validation error', errors: ['lecturer_user_id must be an integer'] });
     }
+    // Admins: ensure all provided courses belong to their department
+    if (req.user?.role === 'admin') {
+      const deptId = await resolveManagerDeptId(req);
+      if (!deptId) return res.status(403).json({ message: 'Access denied: department not set for your account' });
+      const ids = Array.from(new Set(courses.map(c => parseInt(c.course_id, 10)).filter(n => Number.isInteger(n))));
+      if (!ids.length) return res.status(400).json({ message: 'Validation error', errors: ['courses must reference valid course_id values'] });
+      const okCount = await Course.count({ where: { id: ids, dept_id: deptId } });
+      if (okCount !== ids.length) {
+        return res.status(403).json({ message: 'You can only create contracts with courses from your department' });
+      }
+    }
+
     // Create everything within a transaction to avoid partial writes
     const tx = await sequelize.transaction();
     try {
@@ -183,6 +218,11 @@ export async function getContract(req, res) {
       ]
     });
     if (!contract) return res.status(404).json({ message: 'Not found' });
+    // Admin/Management access control: only contracts with at least one course in their department
+    if (['admin','management'].includes(String(req.user?.role).toLowerCase())) {
+      const ok = await isContractInManagerDept(contract.id, req);
+      if (!ok) return res.status(403).json({ message: 'Access denied' });
+    }
     return res.json(contract);
   } catch (e) {
     console.error('[getContract]', e);
@@ -197,12 +237,16 @@ export async function listContracts(req, res) {
   // Default to 10 per page; allow override up to 100
   const limit = Math.min(parseInt(req.query.limit, 10) || 10, 100);
     const offset = (page - 1) * limit;
-    const { academic_year, term, status, q } = req.query;
+  const { academic_year, term, status, q } = req.query;
 
     const where = {};
     if (academic_year) where.academic_year = academic_year;
     if (term) where.term = term;
-    if (status) where.status = status;
+    if (status) {
+      const s = String(status).toUpperCase();
+      const map = { LECTURER_SIGNED: 'WAITING_MANAGEMENT', MANAGEMENT_SIGNED: 'WAITING_LECTURER', DRAFT: 'WAITING_LECTURER' };
+      where.status = map[s] || status;
+    }
 
     // Role-based scoping: lecturers only see their own contracts
     const role = req.user?.role;
@@ -210,8 +254,22 @@ export async function listContracts(req, res) {
       where.lecturer_user_id = req.user.id;
     }
 
+  // We'll use include joins for admin scoping instead of raw EXISTS to avoid alias issues
+  const Sequelize = (await import('sequelize')).default;
+
     const include = [
-      { model: TeachingContractCourse, as: 'courses' },
+      {
+        model: TeachingContractCourse,
+        as: 'courses',
+        include: [
+          {
+            model: Course,
+            required: false,
+            attributes: ['id','dept_id'],
+            include: [{ model: Department, required: false, attributes: ['dept_name'] }]
+          }
+        ]
+      },
       { 
         model: User, 
         as: 'lecturer', 
@@ -220,28 +278,57 @@ export async function listContracts(req, res) {
       }
     ];
 
-    // Basic text search on lecturer fields
-    const Sequelize = (await import('sequelize')).default;
-    if (q) {
-      include[1].where = {
-        [Sequelize.Op.or]: [
-          { display_name: { [Sequelize.Op.like]: `%${q}%` } },
-          { email: { [Sequelize.Op.like]: `%${q}%` } }
-        ]
+    // If admin, require at least one course in their department and only return those course rows
+    if (role === 'admin' || role === 'management') {
+      const deptId = await resolveManagerDeptId(req);
+      if (!deptId) {
+        return res.json({ data: [], page, limit, total: 0 });
+      }
+      include[0] = {
+        model: TeachingContractCourse,
+        as: 'courses',
+        required: true,
+        include: [{
+          model: Course,
+          required: true,
+          where: { dept_id: deptId },
+          attributes: ['dept_id'],
+          include: [{ model: Department, required: false, attributes: ['dept_name'] }]
+        }]
       };
-      include[1].required = false;
     }
 
+    // Basic text search on lecturer fields
+    if (q) {
+      // Keep lecturer include optional and apply where via literal on joined alias to avoid subquery complications
+      include[1].required = false;
+      const like = `%${q}%`;
+      where[Sequelize.Op.and] = [
+        ...(where[Sequelize.Op.and] || []),
+        Sequelize.literal(`(
+          EXISTS (
+            SELECT 1 FROM Users AS lecturer
+            JOIN LecturerProfiles AS LecturerProfile ON LecturerProfile.user_id = lecturer.id
+            WHERE lecturer.id = Teaching_Contracts.lecturer_user_id
+              AND (lecturer.display_name LIKE ${sequelize.escape(like)} OR lecturer.email LIKE ${sequelize.escape(like)})
+          )
+        )`)
+      ];
+    }
+
+    // When using required includes, count can be inflated; use distinct
     const { rows, count } = await TeachingContract.findAndCountAll({
       where,
       include,
       limit,
       offset,
+      distinct: true,
+      subQuery: false,
       order: [['created_at','DESC']]
     });
 
     // For management/admin, attach hourlyRateThisYear (USD) from Candidate profile for each lecturer
-    let data = rows;
+  let data = rows;
     try {
       const role = req.user?.role;
       if (['admin','management','superadmin'].includes(role)) {
@@ -312,6 +399,11 @@ export async function generatePdf(req, res) {
       ]
     });
     if (!contract) return res.status(404).json({ message: 'Not found' });
+  // Admin/Management access control
+  if (['admin','management'].includes(String(req.user?.role).toLowerCase())) {
+    const ok = await isContractInManagerDept(contract.id, req);
+    if (!ok) return res.status(403).json({ message: 'Access denied' });
+  }
 
   let htmlEn = loadTemplate('lecturer_contract.html');
   let htmlKh = loadTemplate('khmer_contract.html');
@@ -486,10 +578,14 @@ export async function updateStatus(req, res) {
   try {
     const id = parseInt(req.params.id, 10);
     const { status } = req.body;
-  const allowed = ['LECTURER_SIGNED','MANAGEMENT_SIGNED','COMPLETED'];
+  const allowed = ['WAITING_LECTURER','WAITING_MANAGEMENT','COMPLETED'];
     if (!allowed.includes(status)) return res.status(400).json({ message: 'Invalid status' });
     const contract = await TeachingContract.findByPk(id);
     if (!contract) return res.status(404).json({ message: 'Not found' });
+    if (['admin','management'].includes(String(req.user?.role).toLowerCase())) {
+      const ok = await isContractInManagerDept(contract.id, req);
+      if (!ok) return res.status(403).json({ message: 'Access denied' });
+    }
     await contract.update({ status });
     return res.json({ message: 'Updated' });
   } catch (e) {
@@ -506,6 +602,10 @@ export async function deleteContract(req, res) {
     if (!contract) return res.status(404).json({ message: 'Not found' });
     if (contract.status === 'COMPLETED') {
       return res.status(400).json({ message: 'Completed contracts cannot be deleted' });
+    }
+    if (['admin','management'].includes(String(req.user?.role).toLowerCase())) {
+      const ok = await isContractInManagerDept(contract.id, req);
+      if (!ok) return res.status(403).json({ message: 'Access denied' });
     }
 
     // Clean up files if any
@@ -547,6 +647,10 @@ export async function uploadSignature(req, res) {
     const who = (req.body.who || 'lecturer').toLowerCase();
     const contract = await TeachingContract.findByPk(id);
     if (!contract) return res.status(404).json({ message: 'Not found' });
+    if (['admin','management'].includes(String(req.user?.role).toLowerCase())) {
+      const allowed = await isContractInManagerDept(contract.id, req);
+      if (!allowed) return res.status(403).json({ message: 'Access denied' });
+    }
     if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
 
     // Move file into person-specific folder: lecturer's name if who=lecturer, else management user's name
@@ -577,9 +681,13 @@ export async function uploadSignature(req, res) {
     const filePath = targetPath;
     const now = new Date();
     if (who === 'lecturer') {
-      await contract.update({ lecturer_signature_path: filePath, lecturer_signed_at: now, status: 'LECTURER_SIGNED' });
+      // Lecturer signing moves status to WAITING_MANAGEMENT unless management already signed (then COMPLETED)
+      const next = contract.management_signed_at ? 'COMPLETED' : 'WAITING_MANAGEMENT';
+      await contract.update({ lecturer_signature_path: filePath, lecturer_signed_at: now, status: next });
     } else {
-      await contract.update({ management_signature_path: filePath, management_signed_at: now, status: contract.status === 'LECTURER_SIGNED' ? 'COMPLETED' : 'MANAGEMENT_SIGNED' });
+      // Management signing moves status to WAITING_LECTURER unless lecturer already signed (then COMPLETED)
+      const next = contract.lecturer_signed_at ? 'COMPLETED' : 'WAITING_LECTURER';
+      await contract.update({ management_signature_path: filePath, management_signed_at: now, status: next });
     }
     return res.json({ message: 'Signature uploaded', path: filePath, status: contract.status });
   } catch (e) {

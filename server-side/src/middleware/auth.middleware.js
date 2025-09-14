@@ -10,7 +10,7 @@ export const protect = async (req, res, next) => {
   if (!token) return res.status(401).json({ message: 'Not authorized' });
 
   try {
-    const { userId, role, id } = jwt.verify(token, process.env.JWT_SECRET);
+  const { userId, role, id } = jwt.verify(token, process.env.JWT_SECRET);
     const resolvedId = userId || id;
     // Fetch user to ensure still exists & active
     const user = await User.findByPk(resolvedId);
@@ -32,13 +32,14 @@ export const protect = async (req, res, next) => {
 export const authorizeRoles = (...allowedRoles) => {
   return (req, res, next) => {
     // Flatten the array of roles if needed
-    const roles = allowedRoles.flat();
+  const roles = allowedRoles.flat().map(r => (r || '').toLowerCase());
+  const userRole = (req.user.role || '').toLowerCase();
     
-    if (!roles.includes(req.user.role)) {
+  if (!roles.includes(userRole)) {
       return res.status(403).json({ 
         message: 'Access denied',
-        requiredRole: roles.join(' or '),
-        yourRole: req.user.role || 'none'
+    requiredRole: roles.join(' or '),
+    yourRole: userRole || 'none'
       });
     }
     next();

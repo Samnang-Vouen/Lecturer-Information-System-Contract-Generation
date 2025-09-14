@@ -2,8 +2,9 @@ import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom';
 // NOTE: XLSX is dynamically imported on demand to reduce Vite optimize pressure
 import axiosInstance from '../../lib/axios.js';
-import { Plus, Edit, Users, AlertTriangle, CheckCircle, Clock, Trash2 } from 'lucide-react';
+import { Plus, Edit, Users, AlertTriangle, CheckCircle, Clock, Trash2, GraduationCap } from 'lucide-react';
 import Button from '../../components/ui/Button.jsx';
+import Select, { SelectItem } from '../../components/ui/Select.jsx';
 import { useAuthStore } from '../../store/useAuthStore.js';
 import Checkbox from '../../components/ui/Checkbox.jsx';
 import pdfMake from 'pdfmake/build/pdfmake';
@@ -648,6 +649,16 @@ export default function CourseMappingPage() {
 
   const submitAdd = async () => {
     try {
+  // Validate required fields (marked with red *)
+  const requiredErrors = [];
+  if (!form.academic_year) requiredErrors.push('Academic Year');
+  if (!form.year_level) requiredErrors.push('Year Level');
+  if (!form.term) requiredErrors.push('Term');
+  if (!form.class_id) requiredErrors.push('Class');
+  if (!form.course_id) requiredErrors.push('Course');
+  if (!form.lecturer_profile_id) requiredErrors.push('Lecturer');
+  if (!form.availability) requiredErrors.push('Availability');
+  if (requiredErrors.length) { setAddError(`Please fill in/select: ${requiredErrors.join(', ')}.`); return; }
       // Validate dual selections (treat invalid group counts as not selected)
       let thGroups = 0, thHours = null, lbGroups = 0, lbHours = null;
       const thG = parseInt(String(theoryGroupsAdd), 10);
@@ -655,7 +666,7 @@ export default function CourseMappingPage() {
       const thHourValid = theoryHourAdd === '15h' || theoryHourAdd === '30h';
       const theoryEffective = theorySelectedAdd && Number.isFinite(thG) && thG >= 1 && thHourValid;
       const labEffective = labSelectedAdd && Number.isFinite(lbG) && lbG >= 1;
-      if (!theoryEffective && !labEffective) { setAddError('Select Theories and/or Labs.'); return; }
+  if (!theoryEffective && !labEffective) { setAddError('Teaching Type is required: select Theory and/or Lab with valid groups.'); return; }
       if (theoryEffective) { thGroups = thG; thHours = theoryHourAdd; }
       if (labEffective) { lbGroups = lbG; lbHours = '30h'; }
       const payload = {
@@ -731,8 +742,7 @@ export default function CourseMappingPage() {
   payload.group_count = thGroups || lbGroups || 1;
   payload.theory_hours = thHours;
   payload.theory_groups = thGroups;
-  payload.theory_15h_combined = (thHours==='15h') ? !!theoryCombineEdit : false;
-  payload.theory_combined = ((thHours==='15h' || thHours==='30h') && thGroups>1) ? !!theoryCombineEdit : false;
+  // Do not send combine flags in edit payload
   payload.lab_hours = lbHours;
   payload.lab_groups = lbGroups;
   payload.comment = (form.comment || '').slice(0, 160);
@@ -752,88 +762,108 @@ export default function CourseMappingPage() {
 
   return (
     <>
-      <div className="p-8 space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Course Mapping</h1>
-            <p className="text-sm text-gray-600 mt-1">Class-based view of lecturer assignments and workload</p>
-          </div>
-          <Button onClick={startAdd} className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-5 h-11 gap-2 flex items-center shadow-sm">
-            <Plus className="h-4 w-4"/> Add Course Assignment
-          </Button>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          {!previewMode ? (
-            <Button
-              onClick={() => { setPreviewMode(true); setSelectedGroupKeys([]); }}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 h-10"
-            >Download</Button>
-          ) : (
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-700">Selected: {selectedGroupKeys.length}</span>
-              <Button
-                onClick={() => setPreviewOpen(true)}
-                disabled={selectedGroupKeys.length === 0}
-                className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-4 h-10"
-              >Generate Preview</Button>
-              <Button
-                variant="outline"
-                onClick={() => { setPreviewMode(false); setSelectedGroupKeys([]); }}
-                className="h-10"
-              >Cancel</Button>
+      <div className="p-4 md:p-6 lg:p-8 space-y-6">
+        <div className="bg-white rounded-2xl border border-gray-200 p-4 md:p-6 lg:p-8">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+            <div className="flex items-center gap-3 mb-2 min-w-0">
+              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center">
+                <GraduationCap className="h-6 w-6 text-white" />
+              </div>
+              <div className="min-w-0">
+                <h1 className="text-2xl sm:text-3xl leading-tight font-bold text-gray-900">Course Mapping</h1>
+                <p className="text-gray-600 mt-1">Class-based view of lecturer assignments and workload</p>
+              </div>
             </div>
-          )}
-
-          {/* Removed top-level Official Export button; use preview modal actions instead */}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-gray-700">Filter by Academic Year:</label>
-            <select
-              value={academicYearFilter}
-              onChange={e=> setAcademicYearFilter(e.target.value)}
-              className="h-9 rounded-md border border-gray-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="ALL">All Academic Years</option>
-              {academicYearOptions.map(y => <option key={`ay-${y}`} value={y}>{y}</option>)}
-            </select>
-          </div>
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-gray-700">Term:</label>
-            <select
-              value={termFilter}
-              onChange={e=> setTermFilter(e.target.value)}
-              className="h-9 rounded-md border border-gray-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="ALL">All</option>
-              {termOptions.map(t => <option key={`fterm-${t}`} value={t}>{t}</option>)}
-            </select>
-          </div>
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-gray-700">Status:</label>
-            <select
-              value={statusFilter}
-              onChange={e=> setStatusFilter(e.target.value)}
-              className="h-9 rounded-md border border-gray-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="ALL">All</option>
-              {statusOptions.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <div className="text-sm text-gray-500">Showing {grouped.length} class{grouped.length!==1 && 'es'} {academicYearFilter==='ALL' ? 'for all years' : `for ${academicYearFilter}`}</div>
-          {previewMode && (
-            <div className="flex items-center gap-2 ml-auto">
-              <Checkbox
-                id="cm-select-all"
-                checked={grouped.length>0 && selectedGroupKeys.length === grouped.length}
-                onCheckedChange={(val)=> toggleAllGroups(!!val)}
-              />
-              <label htmlFor="cm-select-all" className="text-sm text-gray-700">Select all</label>
+            <div className="flex items-center gap-3 w-full sm:w-auto">
+              <Button onClick={startAdd} className="w-full sm:w-auto bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-lg hover:shadow-xl">
+                <Plus className="h-4 w-4 mr-2"/> Add Course Assignment
+              </Button>
             </div>
-          )}
-          {loading && <span className="text-sm text-gray-500">Loading...</span>}
-          {error && <span className="text-sm text-red-600">{error}</span>}
+          </div>
+          <div className="flex flex-wrap gap-3 mt-6">
+            {!previewMode ? (
+              <Button
+                onClick={() => { setPreviewMode(true); setSelectedGroupKeys([]); }}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 h-10"
+              >Download</Button>
+            ) : (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm text-gray-700">Selected: {selectedGroupKeys.length}</span>
+                <Button
+                  onClick={() => setPreviewOpen(true)}
+                  disabled={selectedGroupKeys.length === 0}
+                  className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-4 h-10"
+                >Generate Preview</Button>
+                <Button
+                  variant="outline"
+                  onClick={() => { setPreviewMode(false); setSelectedGroupKeys([]); }}
+                  className="h-10"
+                >Cancel</Button>
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between w-full mt-6">
+            <div className="flex flex-wrap items-end gap-4">
+              <div className="flex flex-col gap-1 w-full sm:w-56">
+                <label className="text-sm font-medium text-gray-700">Filter by Academic Year</label>
+                <Select
+                  value={academicYearFilter}
+                  onValueChange={setAcademicYearFilter}
+                  className="w-full"
+                  buttonClassName="h-10"
+                >
+                  <SelectItem value="ALL">All Academic Years</SelectItem>
+                  {academicYearOptions.map(y => (
+                    <SelectItem key={`ay-${y}`} value={y}>{y}</SelectItem>
+                  ))}
+                </Select>
+              </div>
+              <div className="flex flex-col gap-1 w-full sm:w-56">
+                <label className="text-sm font-medium text-gray-700">Term</label>
+                <Select
+                  value={termFilter}
+                  onValueChange={setTermFilter}
+                  className="w-full"
+                  buttonClassName="h-10"
+                >
+                  <SelectItem value="ALL">All</SelectItem>
+                  {termOptions.map(t => (
+                    <SelectItem key={`fterm-${t}`} value={t}>{t}</SelectItem>
+                  ))}
+                </Select>
+              </div>
+              <div className="flex flex-col gap-1 w-full sm:w-56">
+                <label className="text-sm font-medium text-gray-700">Status</label>
+                <Select
+                  value={statusFilter}
+                  onValueChange={setStatusFilter}
+                  className="w-full"
+                  buttonClassName="h-10"
+                >
+                  <SelectItem value="ALL">All</SelectItem>
+                  {statusOptions.map(s => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  ))}
+                </Select>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-4 sm:ml-auto">
+              <div className="text-sm text-gray-500">Showing {grouped.length} class{grouped.length!==1 && 'es'} {academicYearFilter==='ALL' ? 'for all years' : `for ${academicYearFilter}`}</div>
+              {previewMode && (
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="cm-select-all"
+                    checked={grouped.length>0 && selectedGroupKeys.length === grouped.length}
+                    onCheckedChange={(val)=> toggleAllGroups(!!val)}
+                  />
+                  <label htmlFor="cm-select-all" className="text-sm text-gray-700">Select all</label>
+                </div>
+              )}
+              {loading && <span className="text-sm text-gray-500">Loading...</span>}
+              {error && <span className="text-sm text-red-600">{error}</span>}
+            </div>
+          </div>
         </div>
         {/* NOTE: Client-side filters applied: Academic Year, Term, Status */}
         <div className="space-y-8">
@@ -866,7 +896,7 @@ export default function CourseMappingPage() {
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 flex-wrap">
                       {g.stats.pending>0 && (
                         <span className="inline-flex items-center gap-1 rounded bg-red-50 text-red-700 text-xs font-medium px-2 py-1">
                           <AlertTriangle className="h-3 w-3"/> {g.stats.pending} Pending
@@ -977,7 +1007,7 @@ export default function CourseMappingPage() {
       {/* Confirm Delete Dialog */}
       {confirmOpen && toDelete && (
         <Dialog open={confirmOpen} onOpenChange={(open)=> { setConfirmOpen(open); if (!open) setToDelete(null); }}>
-          <DialogContent>
+          <DialogContent className="w-[95vw] max-w-sm">
             <DialogHeader>
               <DialogTitle>Confirm Deletion</DialogTitle>
             </DialogHeader>
@@ -1015,8 +1045,11 @@ export default function CourseMappingPage() {
 
       {addOpen && (
         <Dialog open={addOpen} onOpenChange={setAddOpen}>
-          <DialogContent>
-              <DialogHeader><DialogTitle>New Mapping</DialogTitle></DialogHeader>
+          <DialogContent className="w-[95vw] sm:max-w-3xl">
+              <DialogHeader>
+                <DialogTitle>New Mapping</DialogTitle>
+                <p className="mt-1 text-sm text-gray-500">Create a new course assignment by selecting the academic year, class, course, lecturer, availability, and teaching type.</p>
+              </DialogHeader>
               {addError && (
                 <div role="alert" className="mb-3 mx-2 rounded-md border border-red-200 bg-red-50 text-red-700 text-sm px-3 py-2">
                   {addError}
@@ -1027,61 +1060,57 @@ export default function CourseMappingPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 auto-rows-min text-sm">
               {/* 1) Academic Year */}
               <div className="flex flex-col min-w-0">
-                <label htmlFor="newMappingAcademicYear" className="block text-sm font-medium text-gray-700 mb-1">Academic Year*</label>
-                <select
-                  id="newMappingAcademicYear"
-                  name="academic_year"
+                <label htmlFor="newMappingAcademicYear" className="block text-sm font-medium text-gray-700 mb-1">Academic Year <span className="text-red-500" aria-hidden="true">*</span></label>
+                <Select
                   value={form.academic_year}
-                  onChange={async e=> {
-                    const year = e.target.value;
+                  onValueChange={async (year)=> {
                     setForm(f=> ({ ...f, academic_year: year, year_level:'', term:'', class_id:'', course_id:'', lecturer_profile_id:'' }));
                     if (year) await reloadForAcademicYear(year);
                   }}
-                  className="block w-full h-9 border border-gray-300 rounded-md px-3 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  buttonClassName="min-h-[3rem] py-2 text-sm"
                 >
-                  <option value="">Select academic year</option>
-                  {academicYearOptions.map(y => <option key={`ay-${y}`} value={y}>{y}</option>)}
-                </select>
+                  <SelectItem value="">Select academic year</SelectItem>
+                  {academicYearOptions.map(y => (
+                    <SelectItem key={`ay-${y}`} value={y}>{y}</SelectItem>
+                  ))}
+                </Select>
               </div>
               {/* 2) Year Level */}
               <div className="flex flex-col min-w-0">
-                <label htmlFor="newMappingYearLevel" className="block text-sm font-medium text-gray-700 mb-1">Year Level*</label>
-                <select
-                  id="newMappingYearLevel"
-                  name="year_level"
+                <label htmlFor="newMappingYearLevel" className="block text-sm font-medium text-gray-700 mb-1">Year Level <span className="text-red-500" aria-hidden="true">*</span></label>
+                <Select
                   value={form.year_level}
-                  onChange={e=> setForm(f=> ({ ...f, year_level: e.target.value, term:'', class_id:'', course_id:'', lecturer_profile_id:'' }))}
-                  className="block w-full h-9 border border-gray-300 rounded-md px-3 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onValueChange={(val)=> setForm(f=> ({ ...f, year_level: val, term:'', class_id:'', course_id:'', lecturer_profile_id:'' }))}
+                  buttonClassName="min-h-[3rem] py-2 text-sm"
                   disabled={!form.academic_year}
                 >
-                  <option value="">{form.academic_year ? 'Select year level' : 'Select academic year first'}</option>
-                  {yearLevelOptionsForAY.map(y => <option key={`yl-${y}`} value={y}>{String(y).startsWith('Year ') ? y : `Year ${y}`}</option>)}
-                </select>
+                  <SelectItem value="">{form.academic_year ? 'Select year level' : 'Select academic year first'}</SelectItem>
+                  {yearLevelOptionsForAY.map(y => (
+                    <SelectItem key={`yl-${y}`} value={y}>{String(y).startsWith('Year ') ? y : `Year ${y}`}</SelectItem>
+                  ))}
+                </Select>
               </div>
               {/* 3) Term */}
               <div className="flex flex-col min-w-0">
-                <label htmlFor="newMappingTerm" className="block text-sm font-medium text-gray-700 mb-1">Term*</label>
-                <select
-                  id="newMappingTerm"
-                  name="term"
+                <label htmlFor="newMappingTerm" className="block text-sm font-medium text-gray-700 mb-1">Term <span className="text-red-500" aria-hidden="true">*</span></label>
+                <Select
                   value={form.term}
-                  onChange={e=> setForm(f=> ({ ...f, term: e.target.value, class_id:'', course_id:'', lecturer_profile_id:'' }))}
-                  className="block w-full h-9 border border-gray-300 rounded-md px-3 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onValueChange={(val)=> setForm(f=> ({ ...f, term: val, class_id:'', course_id:'', lecturer_profile_id:'' }))}
+                  buttonClassName="min-h-[3rem] py-2 text-sm"
                   disabled={!form.academic_year || !form.year_level}
                 >
-                  <option value="">{form.year_level ? 'Select term' : (form.academic_year ? 'Select year level first' : 'Select academic year first')}</option>
-                  {termOptionsForAYLevel.map(t => <option key={`term-${t}`} value={t}>{t}</option>)}
-                </select>
+                  <SelectItem value="">{form.year_level ? 'Select term' : (form.academic_year ? 'Select year level first' : 'Select academic year first')}</SelectItem>
+                  {termOptionsForAYLevel.map(t => (
+                    <SelectItem key={`term-${t}`} value={t}>{t}</SelectItem>
+                  ))}
+                </Select>
               </div>
               {/* 4) Class */}
               <div className="flex flex-col min-w-0">
-                <label htmlFor="newMappingClass" className="block text-sm font-medium text-gray-700 mb-1">Class*</label>
-                <select
-                  id="newMappingClass"
-                  name="class_id"
+                <label htmlFor="newMappingClass" className="block text-sm font-medium text-gray-700 mb-1">Class <span className="text-red-500" aria-hidden="true">*</span></label>
+                <Select
                   value={form.class_id}
-                  onChange={e=> {
-                    const val = e.target.value;
+                  onValueChange={(val)=> {
                     const c = classMap[val];
                     setForm(f=> ({
                       ...f,
@@ -1093,27 +1122,25 @@ export default function CourseMappingPage() {
                       lecturer_profile_id: ''
                     }));
                   }}
-                  className="block w-full h-9 border border-gray-300 rounded-md px-3 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  buttonClassName="min-h-[3rem] py-2 text-sm"
                   disabled={!form.academic_year || !form.year_level || !form.term}
                 >
-                  <option value="">{form.term ? 'Select class' : (form.year_level ? 'Select term first' : (form.academic_year ? 'Select year level first' : 'Select academic year first'))}</option>
+                  <SelectItem value="">{form.term ? 'Select class' : (form.year_level ? 'Select term first' : (form.academic_year ? 'Select year level first' : 'Select academic year first'))}</SelectItem>
                   {classesForSelection.map(c=> (
-                    <option key={c.id} value={c.id}>{c.name}{c.term? ' ' + c.term: ''}</option>
+                    <SelectItem key={c.id} value={String(c.id)}>{c.name}{c.term? ' ' + c.term: ''}</SelectItem>
                   ))}
-                </select>
+                </Select>
               </div>
               {/* 5) Course */}
               <div className="flex flex-col min-w-0">
-                <label htmlFor="newMappingCourse" className="block text-sm font-medium text-gray-700 mb-1">Course*</label>
-                <select
-                  id="newMappingCourse"
-                  name="course_id"
+                <label htmlFor="newMappingCourse" className="block text-sm font-medium text-gray-700 mb-1">Course <span className="text-red-500" aria-hidden="true">*</span></label>
+                <Select
                   value={form.course_id}
-                  onChange={e=> setForm(f=> ({ ...f, course_id: e.target.value, lecturer_profile_id:'' }))}
-                  className="block w-full h-9 border border-gray-300 rounded-md px-3 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onValueChange={(val)=> setForm(f=> ({ ...f, course_id: val, lecturer_profile_id:'' }))}
+                  buttonClassName="min-h-[3rem] py-2 text-sm"
                   disabled={!form.class_id}
                 >
-                  <option value="">{form.class_id ? 'Select course' : 'Select class first'}</option>
+                  <SelectItem value="">{form.class_id ? 'Select course' : 'Select class first'}</SelectItem>
                   {(() => {
                     const cls = classes.find(c=> c.id==form.class_id);
                     let allowed = courses;
@@ -1122,26 +1149,31 @@ export default function CourseMappingPage() {
                       if (codes.size) allowed = courses.filter(c=> codes.has(c.course_code));
                     }
                     return allowed.map(c=> (
-                      <option key={c.id} value={c.id}>{c.course_code} - {c.course_name}</option>
+                      <SelectItem key={c.id} value={String(c.id)}>{c.course_code} - {c.course_name}</SelectItem>
                     ));
                   })()}
-                </select>
+                </Select>
               </div>
               {/* 6) Lecturer */}
               <div className="flex flex-col min-w-0">
-                <label htmlFor="newMappingLecturer" className="block text-sm font-medium text-gray-700 mb-1">Lecturer*</label>
-                <select id="newMappingLecturer" name="lecturer_profile_id" value={form.lecturer_profile_id} onChange={e=> setForm(f=> ({ ...f, lecturer_profile_id:e.target.value }))} className="block w-full h-9 border border-gray-300 rounded-md px-3 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500" disabled={!form.course_id}>
-                  <option value="">Unassigned</option>
+                <label htmlFor="newMappingLecturer" className="block text-sm font-medium text-gray-700 mb-1">Lecturer <span className="text-red-500" aria-hidden="true">*</span></label>
+                <Select
+                  value={form.lecturer_profile_id}
+                  onValueChange={(val)=> setForm(f=> ({ ...f, lecturer_profile_id: val }))}
+                  buttonClassName="min-h-[3rem] py-2 text-sm"
+                  disabled={!form.course_id}
+                >
+                  <SelectItem value="">Unassigned</SelectItem>
                   {(() => {
                     const filtered = form.course_id ? lecturers.filter(l => Array.isArray(l.courses) && l.courses.some(cc => String(cc.id) === String(form.course_id) || String(cc.course_code) === String((courseMap[form.course_id]?.course_code || '')))) : [];
-                    if (!filtered.length) return <option value="" disabled>No lecturers for selected course</option>;
-                    return filtered.map(l=> <option key={l.id} value={l.id}>{l.name}</option>);
+                    if (!filtered.length) return [<SelectItem key="no-lect" value="" className="text-gray-400">No lecturers for selected course</SelectItem>];
+                    return filtered.map(l=> <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>);
                   })()}
-                </select>
+                </Select>
               </div>
               {/* Teaching Type: Allow selecting both Theories and Labs with their own groups */}
               <div className="col-span-1 sm:col-span-2 flex flex-col gap-4">
-                <span className="block text-sm font-medium text-gray-700">Teaching Type*</span>
+                <span className="block text-sm font-medium text-gray-700">Teaching Type <span className="text-red-500" aria-hidden="true">*</span></span>
                 {/* Theories block */}
                 <div className={`rounded-xl border transition-all shadow-sm ${theorySelectedAdd ? 'border-blue-400 ring-1 ring-blue-100 bg-blue-50/30' : 'border-gray-300 hover:border-blue-300'}`}>
                   <div className="flex items-center justify-between p-3 sm:p-4 gap-3">
@@ -1186,15 +1218,6 @@ export default function CourseMappingPage() {
                         <input type="number" inputMode="numeric" min={1} step={1} value={theoryGroupsAdd} onChange={e=> setTheoryGroupsAdd(e.target.value)} className="block w-full h-10 border border-gray-300 rounded-md pl-3 pr-16 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g. 2" />
                         <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-gray-500">groups</span>
                       </div>
-                      {/* {((theoryHourAdd==='15h' || theoryHourAdd==='30h') && (parseInt(String(theoryGroupsAdd), 10) > 1)) && (
-                        <label className="mt-2 inline-flex items-center gap-2 text-xs text-gray-700">
-                          <input type="checkbox" className="sr-only peer" checked={theoryCombineAdd} onChange={e=> setTheoryCombineAdd(e.target.checked)} />
-                          <span aria-hidden className="h-3.5 w-3.5 rounded-[3px] border border-gray-300 bg-white grid place-content-center peer-checked:bg-blue-600 peer-checked:border-blue-600">
-                            <svg className="h-2.5 w-2.5 text-white opacity-0 peer-checked:opacity-100" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                          </span>
-                          Combine groups into 1
-                        </label>
-                      )} */}
                     </div>
                   )}
                 </div>
@@ -1229,18 +1252,24 @@ export default function CourseMappingPage() {
                 </div>
               </div>
               <div className="flex flex-col min-w-0">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Availability*</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Availability <span className="text-red-500" aria-hidden="true">*</span></label>
                 <div className="relative">
                   <button
                     ref={addAvailBtnRef}
                     type="button"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-left text-sm bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[2.25rem]"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-left text-sm bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[3rem]"
                     aria-haspopup="dialog"
                     aria-expanded={availabilityOpenAdd}
-                    onClick={() => setAvailabilityOpenAdd(v=>!v)}
+                    onMouseDown={(e) => {
+                      // Prevent the global pointerdown close from firing before open
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setAddPopoverStyle(computePopover(addAvailBtnRef.current));
+                      setAvailabilityOpenAdd(v => !v);
+                    }}
                   >
                     <span className="whitespace-pre-wrap break-words leading-snug text-gray-700">
-                      {availabilitySummary || <span className="text-gray-400">Choose Availability</span>}
+                      {availabilitySummary || <span className="text-gray-500">Choose Availability</span>}
                     </span>
                   </button>
                       {availabilityOpenAdd && createPortal(
@@ -1295,17 +1324,16 @@ export default function CourseMappingPage() {
                 <input id="newMappingAvailability" name="availability" value={form.availability} onChange={e=> setForm(f=> ({ ...f, availability:e.target.value }))} className="sr-only" readOnly />
               </div>
               <div className="flex flex-col min-w-0">
-                <label htmlFor="newMappingStatus" className="block text-sm font-medium text-gray-700 mb-1">Status*</label>
-                <select id="newMappingStatus" name="status" value={form.status} onChange={e=> setForm(f=> ({ ...f, status:e.target.value }))} className="block w-full h-9 border border-gray-300 rounded-md px-3 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  <option>Pending</option>
-                  <option>Contacting</option>
-                  <option>Accepted</option>
-                  <option>Rejected</option>
-                </select>
+                <label htmlFor="newMappingStatus" className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <Select value={form.status} onValueChange={(v)=> setForm(f=> ({ ...f, status: v }))} buttonClassName="min-h-[3rem] py-2 text-sm">
+                  {['Pending','Contacting','Accepted','Rejected'].map(s => (
+                    <SelectItem key={`st-${s}`} value={s}>{s}</SelectItem>
+                  ))}
+                </Select>
               </div>
               {/* Contacted By */}
               <div className="col-span-1 sm:col-span-2 flex flex-col">
-                <label htmlFor="newMappingContactedBy" className="block text-sm font-medium text-gray-700 mb-1">Contacted By*</label>
+                <label htmlFor="newMappingContactedBy" className="block text-sm font-medium text-gray-700 mb-1">Contacted By <span className="text-red-500" aria-hidden="true">*</span></label>
                 <input
                   id="newMappingContactedBy"
                   name="newMappingContactedBy"
@@ -1316,7 +1344,7 @@ export default function CourseMappingPage() {
                 />
               </div>
               <div className="col-span-1 sm:col-span-2 flex flex-col">
-                <label htmlFor="newMappingComment" className="block text-sm font-medium text-gray-700 mb-1">Comment</label>
+                <label htmlFor="newMappingComment" className="block text-sm font-medium text-gray-700 mb-1">Comment </label>
                 <textarea
                   id="newMappingComment"
                   name="comment"
@@ -1357,7 +1385,7 @@ export default function CourseMappingPage() {
               </div>
               {/* Removed term start placeholder banner */}
               {/* Summary + actions */}
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="text-sm text-gray-600">
                   Showing {currentPreviewRows.length} row{currentPreviewRows.length!==1 && 's'}{selectedGroupKeys.length ? ` from ${selectedGroupKeys.length} class${selectedGroupKeys.length!==1 ? 'es' : ''}` : ''}
                 </div>
@@ -1420,7 +1448,7 @@ export default function CourseMappingPage() {
 
   {editOpen && editing && (
         <Dialog open={editOpen} onOpenChange={setEditOpen}>
-          <DialogContent>
+          <DialogContent className="w-[95vw] sm:max-w-3xl">
             <DialogHeader><DialogTitle>Edit Mapping</DialogTitle></DialogHeader>
             {editError && (
               <div role="alert" className="mb-3 mx-2 rounded-md border border-red-200 bg-red-50 text-red-700 text-sm px-3 py-2">
@@ -1432,15 +1460,15 @@ export default function CourseMappingPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
               <div className="flex flex-col min-w-0">
                 <label htmlFor="editMappingLecturer" className="block text-sm font-medium text-gray-700 mb-1">Lecturer</label>
-                <select id="editMappingLecturer" name="lecturer_profile_id" value={form.lecturer_profile_id} onChange={e=> setForm(f=> ({ ...f, lecturer_profile_id:e.target.value }))} className="block w-full h-9 border border-gray-300 rounded-md px-3 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  <option value="">Unassigned</option>
+                <Select value={form.lecturer_profile_id} onValueChange={(v)=> setForm(f=> ({ ...f, lecturer_profile_id: v }))} buttonClassName="min-h-[3rem] py-2">
+                  <SelectItem value="">Unassigned</SelectItem>
                   {(() => {
                     // In edit mode respect the selected/loaded course in form.course_id
                     const filtered = form.course_id ? lecturers.filter(l => Array.isArray(l.courses) && l.courses.some(cc => String(cc.id) === String(form.course_id) || String(cc.course_code) === String((courseMap[form.course_id]?.course_code || '')))) : lecturers;
-                    if (!filtered.length) return <option value="" disabled>No lecturers for selected course</option>;
-                    return filtered.map(l=> <option key={l.id} value={l.id}>{l.name}</option>);
+                    if (!filtered.length) return [<SelectItem key="no-lect-edit" value="" className="text-gray-400">No lecturers for selected course</SelectItem>];
+                    return filtered.map(l=> <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>);
                   })()}
-                </select>
+                </Select>
               </div>
               {/* Teaching Type (Edit): Dual selection with checkboxes */}
               <div className="col-span-1 sm:col-span-2 flex flex-col gap-4">
@@ -1477,15 +1505,7 @@ export default function CourseMappingPage() {
                         <input type="number" inputMode="numeric" min={1} step={1} value={theoryGroupsEdit} onChange={e=> setTheoryGroupsEdit(e.target.value)} className="block w-full h-10 border border-gray-300 rounded-md pl-3 pr-16 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g. 2" />
                         <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-gray-500">groups</span>
                       </div>
-                      {((theoryHourEdit==='15h' || theoryHourEdit==='30h') && (parseInt(String(theoryGroupsEdit), 10) > 1)) && (
-                        <label className="mt-2 inline-flex items-center gap-2 text-xs text-gray-700">
-                          <input type="checkbox" className="sr-only peer" checked={theoryCombineEdit} onChange={e=> setTheoryCombineEdit(e.target.checked)} />
-                          <span aria-hidden className="h-3.5 w-3.5 rounded-[3px] border border-gray-300 bg-white grid place-content-center peer-checked:bg-blue-600 peer-checked:border-blue-600">
-                            <svg className="h-2.5 w-2.5 text-white opacity-0 peer-checked:opacity-100" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                          </span>
-                          Combine groups into 1
-                        </label>
-                      )}
+                      {/* Combine groups option removed in Edit */}
                     </div>
                   )}
                 </div>
@@ -1525,13 +1545,18 @@ export default function CourseMappingPage() {
                   <button
                     ref={editAvailBtnRef}
                     type="button"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-left text-sm bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[2.25rem]"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-left text-sm bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[3rem]"
                     aria-haspopup="dialog"
                     aria-expanded={availabilityOpenEdit}
-                    onClick={() => setAvailabilityOpenEdit(v=>!v)}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setEditPopoverStyle(computePopover(editAvailBtnRef.current));
+                      setAvailabilityOpenEdit(v => !v);
+                    }}
                   >
                     <span className="whitespace-pre-wrap break-words leading-snug text-gray-700">
-                      {availabilitySummary || <span className="text-gray-400">Choose Availability</span>}
+                      {availabilitySummary || <span className="text-gray-500">Choose Availability</span>}
                     </span>
                   </button>
                     {availabilityOpenEdit && createPortal(
@@ -1587,12 +1612,11 @@ export default function CourseMappingPage() {
               </div>
               <div className="flex flex-col min-w-0">
                 <label htmlFor="editMappingStatus" className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                <select id="editMappingStatus" name="status" value={form.status} onChange={e=> setForm(f=> ({ ...f, status:e.target.value }))} className="block w-full h-9 border border-gray-300 rounded-md px-3 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  <option>Pending</option>
-                  <option>Contacting</option>
-                  <option>Accepted</option>
-                  <option>Rejected</option>
-                </select>
+                <Select value={form.status} onValueChange={(v)=> setForm(f=> ({ ...f, status: v }))} buttonClassName="min-h-[3rem] py-2 text-sm">
+                  {['Pending','Contacting','Accepted','Rejected'].map(s => (
+                    <SelectItem key={`est-${s}`} value={s}>{s}</SelectItem>
+                  ))}
+                </Select>
               </div>
               <div className="col-span-2 flex flex-col">
                 <label htmlFor="editMappingContactedBy" className="block text-sm font-medium text-gray-700 mb-1">Contacted By</label>

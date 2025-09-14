@@ -3,9 +3,9 @@ import { motion } from 'framer-motion';
 import { axiosInstance } from '../../lib/axios.js';
 import Button from '../../components/ui/Button.jsx';
 import Input from '../../components/ui/Input.jsx';
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../../components/ui/Table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../../components/ui/Dialog';
-import { Eye, Download, CheckCircle2, AlertCircle, Clock, Filter as FilterIcon, FileText, BellRing, PenTool } from 'lucide-react';
+import Select, { SelectItem } from '../../components/ui/Select.jsx';
+import { Eye, Download, CircleCheck, Clock, Filter as FilterIcon, FileText, BellRing, PenTool, Info, User, Building2, Calendar, DollarSign, Ellipsis } from 'lucide-react';
 
 export default function ManagementContracts(){
   const [contracts, setContracts] = useState([]);
@@ -15,16 +15,19 @@ export default function ManagementContracts(){
   const [total, setTotal] = useState(0);
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('');
-  // Actions are now icon buttons; no dropdown state needed
+  // Actions
   const [uploading, setUploading] = useState(false);
-  const [pendingUploadId, setPendingUploadId] = useState(null);
   const [downloadingId, setDownloadingId] = useState(null);
-  const fileInputRef = useRef(null);
   // Dialog for upload
   const [showUploadDlg, setShowUploadDlg] = useState(false);
   const [uploadContractId, setUploadContractId] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploadError, setUploadError] = useState('');
+  // Detail dialog
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailContract, setDetailContract] = useState(null);
+  // Ellipsis menus
+  const [menuOpenId, setMenuOpenId] = useState(null);
 
   const fetchContracts = async ()=>{
     try{
@@ -36,7 +39,12 @@ export default function ManagementContracts(){
   };
   useEffect(()=>{ fetchContracts(); }, [page, limit, q, status]);
 
-  // No action menu dropdown, so no outside-click handler
+  // Close ellipsis menu on outside click
+  useEffect(() => {
+    const onDoc = () => setMenuOpenId(null);
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, []);
 
   // Client-side search: dynamic, case-insensitive, starts-with on lecturer name only (ignore titles)
   const filteredContracts = useMemo(() => {
@@ -68,12 +76,18 @@ export default function ManagementContracts(){
 
   const statusLabel = (s) => {
     switch (s) {
-      case 'DRAFT': return { label: 'draft', class: 'bg-gray-100 text-gray-700 border-gray-200', icon: Clock };
-      case 'LECTURER_SIGNED': return { label: 'waiting management', class: 'bg-blue-50 text-blue-700 border-blue-200', icon: AlertCircle };
-  case 'WAITING_LECTURER': return { label: 'waiting lecturer', class: 'bg-amber-50 text-amber-700 border-amber-200', icon: Clock };
-  case 'MANAGEMENT_SIGNED': return { label: 'waiting lecturer', class: 'bg-amber-50 text-amber-700 border-amber-200', icon: Clock };
-      case 'COMPLETED': return { label: 'completed', class: 'bg-green-50 text-green-700 border-green-200', icon: CheckCircle2 };
-      default: return { label: 'draft', class: 'bg-gray-100 text-gray-700 border-gray-200', icon: Clock };
+      case 'DRAFT':
+        return { label: 'draft', class: 'bg-gray-100 text-gray-700 border-gray-200', icon: Clock };
+      case 'WAITING_MANAGEMENT':
+        return { label: 'waiting management', class: 'bg-blue-50 text-blue-700 border-blue-200', icon: Clock };
+      case 'WAITING_LECTURER':
+        return { label: 'waiting lecturer', class: 'bg-amber-50 text-amber-700 border-amber-200', icon: Clock };
+      case 'MANAGEMENT_SIGNED':
+        return { label: 'waiting lecturer', class: 'bg-amber-50 text-amber-700 border-amber-200', icon: Clock };
+      case 'COMPLETED':
+        return { label: 'completed', class: 'bg-green-50 text-green-700 border-green-200', icon: CircleCheck };
+      default:
+        return { label: 'draft', class: 'bg-gray-100 text-gray-700 border-gray-200', icon: Clock };
     }
   };
 
@@ -82,20 +96,41 @@ export default function ManagementContracts(){
     window.open(url, '_blank');
   };
 
-  // Build a safe filename from lecturer info
+  // Build a safe filename from lecturer info (include normalized title like Dr/Prof/Mr/Ms/Mrs)
   const deriveLecturerBaseName = (lecturer) => {
     if (!lecturer) return '';
+    // Raw title from profile
+    const rawTitle = lecturer?.LecturerProfile?.title || lecturer?.title || '';
+    const t = String(rawTitle || '').toLowerCase().replace(/\./g, '').trim();
+    const prettyTitle = t === 'dr'
+      ? 'Dr'
+      : t === 'prof' || t === 'professor'
+      ? 'Prof'
+      : t === 'mr'
+      ? 'Mr'
+      : t === 'ms' || t === 'miss'
+      ? 'Ms'
+      : t === 'mrs'
+      ? 'Mrs'
+      : (rawTitle ? String(rawTitle) : '');
+
     // Prefer human display name; fall back to email local-part
     let name = lecturer?.display_name || lecturer?.full_name || lecturer?.full_name_english || lecturer?.full_name_khmer || lecturer?.name || lecturer?.email || '';
     if (name.includes('@')) name = name.split('@')[0];
-    // Strip common titles if prefixed
+    // Strip common titles if prefixed in the name itself to avoid duplication
     name = name.replace(/^(mr|mrs|ms|miss|dr|prof|professor)\.?\s+/i, '');
-    return name.trim();
+    name = name.trim();
+    return prettyTitle ? `${prettyTitle} ${name}`.trim() : name;
   };
 
   const toSafePdfFilename = (baseName, id) => {
-    let safe = String(baseName || '').replace(/[\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim();
+    let safe = String(baseName || '')
+      .replace(/[\/:*?"<>|]+/g, ' ') // illegal -> space
+      .replace(/\s+/g, ' ') // compress spaces
+      .trim();
     if (!safe) safe = `contract-${id}`;
+    // Replace spaces with underscores for cleaner filenames
+    safe = safe.replace(/\s+/g, '_');
     // limit length and ensure .pdf extension
     safe = safe.slice(0, 80);
     return /\.pdf$/i.test(safe) ? safe : `${safe}.pdf`;
@@ -124,7 +159,7 @@ export default function ManagementContracts(){
 
   const approveAsManagement = async (c) => {
     try{
-      await axiosInstance.patch(`/teaching-contracts/${c.id}/status`, { status: 'MANAGEMENT_SIGNED' });
+      await axiosInstance.patch(`/teaching-contracts/${c.id}/status`, { status: 'WAITING_LECTURER' });
       await fetchContracts();
     } catch {}
   };
@@ -144,16 +179,6 @@ export default function ManagementContracts(){
     } finally {
       setUploading(false);
     }
-  };
-
-  const onSelectSignatureFile = async (e) => {
-    const file = e.target.files && e.target.files[0];
-    const id = pendingUploadId;
-    // reset input so the same file can be selected again later
-    if (fileInputRef.current) fileInputRef.current.value = '';
-    setPendingUploadId(null);
-    if (!file || !id) return;
-    await uploadManagementSignature(id, file);
   };
 
   const handleSignClick = (c, canApprove) => {
@@ -199,6 +224,21 @@ export default function ManagementContracts(){
     return prettyTitle ? `${prettyTitle} ${name}` : name;
   };
 
+  const formatMDY = (value) => {
+    if (!value) return '';
+    try {
+      const d = new Date(value);
+      if (isNaN(d.getTime())) return '';
+      return d.toLocaleDateString('en-US', { year: 'numeric', month: 'numeric', day: 'numeric' });
+    } catch { return ''; }
+  };
+
+  const getDepartmentName = (c) => {
+    const fromLecturer = c?.lecturer?.department_name || c?.lecturer?.department || '';
+    const fromCourse = c?.courses?.[0]?.Course?.Department?.name || c?.courses?.[0]?.Course?.department_name || '';
+    return fromLecturer || fromCourse || '—';
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
       <div className="p-8 space-y-6">
@@ -231,21 +271,30 @@ export default function ManagementContracts(){
             <Input className="pl-3 h-11 rounded-xl" placeholder="Search lecturer name without title" value={q} onChange={(e)=>{ setQ(e.target.value); setPage(1); }} />
           </div>
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-2 border border-gray-300 rounded-xl h-11 px-3 bg-white">
+            <div className="flex items-center gap-2 border border-gray-300 rounded-xl h-11 px-2.5 bg-white">
               <FilterIcon className="w-4 h-4 text-gray-500" />
-              <select value={status} onChange={(e)=>{ setStatus(e.target.value); setPage(1); }} className="text-sm outline-none bg-transparent h-full py-0">
-                <option value="">All Status</option>
-                <option value="LECTURER_SIGNED">Waiting Management</option>
-                <option value="WAITING_LECTURER">Waiting Lecturer</option>
-                <option value="COMPLETED">Completed</option>
-              </select>
+              <div className="min-w-[160px] flex items-center">
+                <Select
+                  value={status}
+                  onValueChange={(v)=>{ setStatus(v); setPage(1); }}
+                  placeholder="All Status"
+                  className="w-full"
+                  unstyled
+                  buttonClassName="h-11 text-sm bg-transparent px-1 pr-6"
+                >
+                  <SelectItem value="">All Status</SelectItem>
+                  <SelectItem value="WAITING_MANAGEMENT">Waiting Management</SelectItem>
+                  <SelectItem value="WAITING_LECTURER">Waiting Lecturer</SelectItem>
+                  <SelectItem value="COMPLETED">Completed</SelectItem>
+                </Select>
+              </div>
             </div>
           </div>
         </motion.div>
 
   {/* Pending management signatures */}
       {(() => {
-        const pending = (contracts || []).filter(x => x.status === 'LECTURER_SIGNED');
+  const pending = (contracts || []).filter(x => x.status === 'WAITING_MANAGEMENT');
         if (!pending.length) return null;
         const fmt = (v) => { try { if (!v) return ''; const d = new Date(v); if (isNaN(d)) return ''; return d.toLocaleDateString('en-US', { year: 'numeric', month: 'numeric', day: 'numeric' }); } catch { return ''; } };
         const toCtr = (c) => { const y = c.created_at ? new Date(c.created_at).getFullYear() : new Date().getFullYear(); return `CTR-${y}-${String(c.id).padStart(3,'0')}`; };
@@ -310,239 +359,191 @@ export default function ManagementContracts(){
         );
       })()}
 
-      {/* Mobile list (cards) */}
+      {/* Count header above cards */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, delay: 0.08 }}
+        className="rounded-2xl border bg-white shadow-sm overflow-hidden"
+      >
+        <div className="px-5 py-4">
+          <div className="flex items-center gap-2 text-gray-900 font-semibold">
+            <FileText className="w-4 h-4 text-blue-600" />
+            <span className="text-lg">All My Contracts ({(filteredContracts || []).length})</span>
+          </div>
+          <div className="text-sm text-gray-600 mt-0.5">Complete history of your contracts</div>
+        </div>
+      </motion.div>
+
+      {/* Unified card grid (mobile + desktop) */}
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.1 }}
-        className="md:hidden space-y-3"
+        transition={{ duration: 0.4, delay: 0.12 }}
+        className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"
       >
         {(filteredContracts || []).map(c => {
           const createdYear = c.created_at ? new Date(c.created_at).getFullYear() : new Date().getFullYear();
-          const formattedId = `CTR-${createdYear}-${String(c.id).padStart(3,'0')}`;
+          const formattedId = `CTR-${createdYear}-${String(c.id).padStart(3, '0')}`;
+          const st = statusLabel(c.status);
+          const canApprove = c.status === 'WAITING_MANAGEMENT';
           const startDate = c.start_date || c.startDate || null;
           const endDate = c.end_date || c.endDate || null;
-          const formatMDY = (value) => { if(!value) return ''; try{ const d=new Date(value); if(isNaN(d.getTime())) return ''; return d.toLocaleDateString('en-US',{year:'numeric',month:'numeric',day:'numeric'});} catch{return '';} };
-          const st = statusLabel(c.status);
-          const canApprove = c.status === 'LECTURER_SIGNED';
           const hours = (c.courses || []).reduce((a, cc) => a + (cc.hours || 0), 0);
           const rate = (c.hourlyRateThisYear != null && c.hourlyRateThisYear !== '') ? Number(c.hourlyRateThisYear) : null;
           const salary = (rate != null && Number.isFinite(Number(rate)) && Number.isFinite(Number(hours))) ? Number(rate) * Number(hours) : null;
           return (
-            <div key={c.id} className="rounded-2xl border bg-white shadow-sm overflow-hidden">
-              <div className="px-4 pt-4 flex flex-col sm:flex-row items-start sm:items-start justify-between gap-2">
-                <div className="min-w-0 w-full">
-                  <div className="text-xs text-gray-500">{formattedId}</div>
-                  <div className="text-base font-semibold text-gray-900 truncate">{formatLecturerDisplay(c.lecturer)}</div>
-                  <div className="text-xs text-gray-500 truncate">{c.lecturer?.email}</div>
-                </div>
-                <div className="mt-2 sm:mt-0 sm:ml-auto shrink-0">
-                  <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium border ${st.class}`}>
-                    {st.icon ? React.createElement(st.icon, { className: 'w-3.5 h-3.5' }) : null}
-                    {st.label}
-                  </span>
+            <div key={c.id} className="group rounded-2xl border bg-white shadow-sm overflow-hidden transition hover:shadow-md hover:border-gray-200">
+              {/* Header with document icon and ID + ellipsis menu */}
+              <div className="px-5 pt-5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-gray-900 font-semibold">
+                    <FileText className="w-4 h-4 text-blue-600" />
+                    <span className="text-lg">{formattedId}</span>
+                  </div>
+          <div className="relative" onMouseDown={(e)=>e.stopPropagation()}>
+                    <button
+                      type="button"
+                      data-ellipsis
+                      onClick={(e) => { e.stopPropagation(); setMenuOpenId(prev => prev === c.id ? null : c.id); }}
+                      className={`p-1.5 rounded-md hover:bg-gray-100 text-gray-500 hover:text-gray-800 transition-opacity opacity-100 sm:opacity-0 sm:group-hover:opacity-100`}
+                      title="More"
+                      aria-label="More actions"
+                      aria-expanded={menuOpenId===c.id}
+                    >
+                      <Ellipsis className="w-4 h-4" />
+                    </button>
+                    {menuOpenId === c.id && (
+                      <div className="absolute right-0 mt-1 w-44 rounded-xl border bg-white shadow-lg py-1 z-20" onMouseDown={(e)=>e.stopPropagation()}>
+                        <button
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center gap-2"
+                          onClick={()=>{ setMenuOpenId(null); previewPdfFor(c.id); }}
+                        >
+                          <Eye className="w-4 h-4" /> View
+                        </button>
+                        <button
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center gap-2"
+                          disabled={downloadingId===c.id}
+                          onClick={()=>{ const base = deriveLecturerBaseName(c.lecturer); const fname = toSafePdfFilename(base, c.id); setMenuOpenId(null); downloadPdfFor(c.id, fname); }}
+                        >
+                          <Download className="w-4 h-4" /> Download PDF
+                        </button>
+                        <div className="my-1 h-px bg-gray-200" />
+                        <button
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 text-orange-600 flex items-center gap-2"
+                          onClick={()=>{ setDetailContract(c); setDetailOpen(true); setMenuOpenId(null); }}
+                        >
+                          <Info className="w-4 h-4" /> Detail
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-              <div className="px-4 mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-                <div>
-                  <div className="text-gray-500">Period</div>
+
+              {/* Lecturer section */}
+              <div className="px-5 mt-4">
+                <div className="flex items-start gap-3">
+                  <User className="w-4 h-4 text-gray-500 mt-0.5" />
+                  <div className="min-w-0">
+                    <div className="font-semibold text-gray-900 text-base truncate">{formatLecturerDisplay(c.lecturer)}</div>
+                    <div className="text-sm text-gray-600 truncate">{c.lecturer?.email}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Department */}
+              <div className="px-5 mt-3">
+                <div className="flex items-center gap-3 text-gray-800">
+                  <Building2 className="w-4 h-4 text-gray-500" />
+                  <span className="text-sm">{getDepartmentName(c)}</span>
+                </div>
+              </div>
+
+              {/* Contract period */}
+              <div className="px-5 mt-4">
+                <div className="flex items-center gap-3 text-gray-800">
+                  <Calendar className="w-4 h-4 text-gray-500" />
+                  <span className="text-sm font-medium text-gray-700">Contract Period</span>
+                </div>
+                <div className="mt-2 text-sm">
                   {startDate && endDate ? (
-                    <div className="text-gray-900 whitespace-nowrap">{formatMDY(startDate)} <span className="text-gray-600">to</span> {formatMDY(endDate)}</div>
+                    <div className="text-gray-900">
+                      <div className="font-semibold">{formatMDY(startDate)}</div>
+                      <div className="text-gray-600">to</div>
+                      <div>{formatMDY(endDate)}</div>
+                    </div>
                   ) : (
                     <div className="text-gray-900">{`Term ${c.term}`} <span className="text-gray-600">•</span> {c.academic_year}</div>
                   )}
                 </div>
-                <div>
-                  <div className="text-gray-500">Rate</div>
-                  <div className="text-gray-900">{rate != null ? `$${rate}/hr` : '-'}</div>
-                  <div className="text-gray-600">{hours}h{salary != null ? ` • $${salary.toLocaleString('en-US')}` : ''}</div>
+              </div>
+
+              {/* Financial details */}
+              <div className="px-5 mt-4">
+                <div className="flex items-center gap-3 text-gray-800">
+                  <DollarSign className="w-4 h-4 text-gray-500" />
+                  <span className="text-sm font-medium text-gray-700">Financial Details</span>
+                </div>
+                <div className="mt-2 text-sm">
+                  <div className="flex items-center justify-between py-1">
+                    <span className="text-gray-700">Rate:</span>
+                    <span className="text-gray-900 font-semibold">{rate != null ? `$${rate}/hr` : '-'}</span>
+                  </div>
+                  <div className="flex items-center justify-between py-1">
+                    <span className="text-gray-700">Hours:</span>
+                    <span className="font-semibold text-gray-900">{hours}h</span>
+                  </div>
+                  <div className="my-2 border-t" />
+                  <div className="flex items-center justify-between py-1">
+                    <span className="text-gray-800 font-medium">Total:</span>
+                    <span className="font-semibold text-green-600">{salary != null ? `$${salary.toLocaleString('en-US')}` : '-'}</span>
+                  </div>
                 </div>
               </div>
-              <div className="px-4 pb-4 mt-3 flex flex-col sm:flex-row items-stretch gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="flex-1 rounded-lg w-full sm:w-auto justify-center"
-                  title="View Contract"
-                  aria-label="View Contract"
-                  onClick={() => previewPdfFor(c.id)}
-                >
-                  <Eye className="w-4 h-4 mr-1.5" /> Review
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className={`rounded-lg w-full sm:w-auto justify-center ${canApprove ? '' : 'opacity-60 cursor-not-allowed'}`}
-                  title={canApprove ? 'Sign Contract' : 'Waiting for lecturer'}
-                  aria-label={canApprove ? 'Sign Contract' : 'Waiting for lecturer'}
-                  disabled={!canApprove || uploading}
-                  onClick={() => handleSignClick(c, canApprove)}
-                >
-                  <PenTool className="w-4 h-4 mr-1.5" /> Sign
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="rounded-lg w-full sm:w-auto justify-center"
-                  title="Download PDF"
-                  aria-label="Download PDF"
-                  disabled={downloadingId===c.id}
-                  onClick={() => {
-                    const base = deriveLecturerBaseName(c.lecturer);
-                    const fname = toSafePdfFilename(base, c.id);
-                    downloadPdfFor(c.id, fname);
-                  }}
-                >
-                  <Download className={`w-4 h-4 ${downloadingId===c.id ? 'opacity-70' : ''}`} />
-                </Button>
+
+              {/* Footer: status + actions (styled as requested) */}
+              <div className="mt-4 px-5 py-3.5 border-t border-gray-200 flex items-center justify-between">
+                <div>
+                  <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium leading-none border ${st.class || 'bg-gray-50 text-gray-700 border-gray-200'}`}>
+                    {st.icon ? React.createElement(st.icon, { className: 'w-3.5 h-3.5' }) : null}
+                    {st.label}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => previewPdfFor(c.id)}
+                    className="p-2 rounded-md hover:bg-gray-100 text-gray-600 hover:text-gray-900 transition-colors"
+                    title="Preview"
+                    aria-label="Preview"
+                  >
+                    <Eye className="w-4 h-4" />
+                  </button>
+                  {canApprove && (
+                    <button
+                      onClick={() => handleSignClick(c, canApprove)}
+                      className="w-9 h-9 inline-flex items-center justify-center rounded-full bg-blue-600 hover:bg-blue-700 text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                      title="Sign"
+                      aria-label="Sign"
+                    >
+                      <PenTool className="w-4 h-4" />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => { const base = deriveLecturerBaseName(c.lecturer); const fname = toSafePdfFilename(base, c.id); downloadPdfFor(c.id, fname); }}
+                    className={`p-2 rounded-md hover:bg-gray-100 text-gray-600 hover:text-gray-900 transition-colors ${downloadingId===c.id ? 'opacity-60 cursor-not-allowed' : ''}`}
+                    title="Download"
+                    aria-label="Download"
+                    disabled={downloadingId===c.id}
+                  >
+                    <Download className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             </div>
           );
         })}
       </motion.div>
-
-      {/* Contracts table card (desktop) */}
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.12 }}
-        className="hidden md:block rounded-2xl border bg-white shadow-sm overflow-hidden"
-      >
-        <div className="px-6 py-4 border-b flex items-center gap-2">
-          <div className="flex items-center gap-2 text-slate-900 font-semibold"><FileText className="w-4 h-4 text-blue-600"/> Contracts ({total})</div>
-          <div className="ml-auto text-sm text-gray-600 hidden md:block">{loading ? 'Loading…' : `${(contracts?.length||0)} of ${total}`}</div>
-        </div>
-        <div className="w-full overflow-x-auto">
-        <Table className="min-w-[920px]">
-          <TableHeader>
-            <TableRow>
-              <TableHead className="whitespace-nowrap">Contract ID</TableHead>
-              <TableHead className="whitespace-nowrap">Lecturer</TableHead>
-              <TableHead className="whitespace-nowrap">Department</TableHead>
-              <TableHead className="whitespace-nowrap">Period</TableHead>
-              <TableHead className="whitespace-nowrap">Rate</TableHead>
-              <TableHead className="whitespace-nowrap">Status</TableHead>
-              <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {(filteredContracts||[]).map(c => {
-              const createdYear = c.created_at ? new Date(c.created_at).getFullYear() : new Date().getFullYear();
-              const formattedId = `CTR-${createdYear}-${String(c.id).padStart(3,'0')}`;
-              const startDate = c.start_date || c.startDate || null;
-              const endDate = c.end_date || c.endDate || null;
-              const formatMDY = (value) => { if(!value) return ''; try{ const d=new Date(value); if(isNaN(d.getTime())) return ''; return d.toLocaleDateString('en-US',{year:'numeric',month:'numeric',day:'numeric'});} catch{return '';} };
-              const period = startDate && endDate ? (
-                <div className="text-sm leading-tight">
-                  <div>{formatMDY(startDate)}</div>
-                  <div className="text-gray-600">to {formatMDY(endDate)}</div>
-                </div>
-              ) : (
-                <span>{`Term ${c.term} • ${c.academic_year}`}</span>
-              );
-              const st = statusLabel(c.status);
-              const canApprove = c.status === 'LECTURER_SIGNED';
-              const hours = (c.courses || []).reduce((a, cc) => a + (cc.hours || 0), 0);
-              const rate = (c.hourlyRateThisYear != null && c.hourlyRateThisYear !== '') 
-                ? Number(c.hourlyRateThisYear) 
-                : null;
-              const salary = (rate != null && Number.isFinite(Number(rate)) && Number.isFinite(Number(hours)))
-                ? Number(rate) * Number(hours)
-                : null;
-              return (
-        <TableRow key={c.id}>
-                  <TableCell>
-                    <div className="font-medium whitespace-nowrap">{formattedId}</div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="text-sm font-medium truncate max-w-[220px]">{formatLecturerDisplay(c.lecturer)}</div>
-                    <div className="text-xs text-gray-500 truncate max-w-[220px]">{c.lecturer?.email}</div>
-                  </TableCell>
-                  <TableCell className="truncate max-w-[160px]">{c.lecturer?.department_name || '—'}</TableCell>
-                  <TableCell className="whitespace-nowrap">{period}</TableCell>
-                  <TableCell>
-                    <div className="text-sm leading-tight">
-                      <div className="font-medium">{rate != null ? `$${rate}/hr` : '-'}</div>
-                      <div className="text-gray-600">{hours}h total</div>
-                      {salary != null && (
-                        <div className="text-gray-600">${salary.toLocaleString('en-US')} salary</div>
-                      )}
-                    </div>
-                  </TableCell> 
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium border ${st.class}`}>
-                        {st.icon ? React.createElement(st.icon, { className: 'w-3.5 h-3.5' }) : null}
-                        {st.label}
-                      </span>
-                      {canApprove && (
-                        <span
-                          className="inline-flex items-center justify-center rounded-full p-1.5 text-amber-700 border border-amber-200 bg-amber-50 animate-pulse"
-                          title="Awaiting management signature"
-                          aria-label="Awaiting management signature"
-                        >
-                          <BellRing className="w-3.5 h-3.5" />
-                        </span>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right">
-                      <div className="flex justify-end items-center gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="w-10 h-10 p-0 rounded-xl border border-gray-300 bg-gray-50 text-gray-800 hover:bg-gray-100 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-300 shadow-sm transition-colors"
-                        title="View Contract"
-                            aria-label="View Contract"
-                        onClick={() => previewPdfFor(c.id)}
-                      >
-                        <Eye className="w-5 h-5" strokeWidth={2.25} />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className={`w-10 h-10 p-0 rounded-xl shadow-sm transition-colors focus:outline-none focus:ring-2 ${canApprove ? 'border border-amber-400 bg-amber-50 text-amber-800 hover:bg-amber-100 hover:border-amber-500 focus:ring-amber-300' : 'border border-gray-300 bg-gray-50 text-gray-400 focus:ring-gray-200'}`}
-                        title={canApprove ? 'Sign Contract' : 'Waiting for lecturer'}
-                        aria-label={canApprove ? 'Sign Contract' : 'Waiting for lecturer'}
-                        disabled={!canApprove || uploading}
-                        onClick={() => handleSignClick(c, canApprove)}
-                      >
-                        <PenTool className="w-5 h-5" strokeWidth={2.25} />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className={`w-10 h-10 p-0 rounded-xl border bg-gray-50 text-gray-800 focus:outline-none focus:ring-2 shadow-sm transition-colors ${downloadingId===c.id ? 'border-gray-300 animate-pulse' : 'border-gray-300 hover:bg-gray-100 hover:border-gray-400 focus:ring-blue-300'}`}
-                        title="Download PDF"
-                        aria-label="Download PDF"
-                        disabled={downloadingId===c.id}
-                        onClick={() => {
-                          const base = deriveLecturerBaseName(c.lecturer);
-                          const fname = toSafePdfFilename(base, c.id);
-                          downloadPdfFor(c.id, fname);
-                        }}
-                      >
-                        <Download className={`w-5 h-5 ${downloadingId===c.id ? 'opacity-70' : ''}`} strokeWidth={2.25} />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-        </div>
-    </motion.div>
-      {/* Hidden file input for management signature upload */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={onSelectSignatureFile}
-        disabled={uploading}
-      />
-
       {/* Upload Signature Dialog */}
       <Dialog open={showUploadDlg} onOpenChange={(v)=>{ setShowUploadDlg(v); if(!v){ setSelectedFile(null); setUploadError(''); } }}>
         <DialogContent className="sm:max-w-md">
@@ -583,6 +584,75 @@ export default function ManagementContracts(){
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+      {/* Detail Dialog */}
+      <Dialog open={detailOpen} onOpenChange={(v)=>{ setDetailOpen(v); if(!v) setDetailContract(null); }}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Contract Detail</DialogTitle>
+            <DialogDescription>Summary and course breakdown</DialogDescription>
+          </DialogHeader>
+          {detailContract && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <div className="text-gray-500">Lecturer</div>
+                  <div className="font-medium">{formatLecturerDisplay(detailContract.lecturer)}</div>
+                  <div className="text-gray-600">{detailContract.lecturer?.email}</div>
+                </div>
+                <div>
+                  <div className="text-gray-500">Status</div>
+                  {(() => { const st = statusLabel(detailContract.status); return (
+                    <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium border ${st.class}`}>
+                      {st.icon ? React.createElement(st.icon, { className: 'w-3.5 h-3.5' }) : null}
+                      {st.label}
+                    </span>
+                  ); })()}
+                </div>
+                <div>
+                  <div className="text-gray-500">Period</div>
+                  {detailContract.start_date && detailContract.end_date ? (
+                    <div>{formatMDY(detailContract.start_date)} to {formatMDY(detailContract.end_date)}</div>
+                  ) : (
+                    <div>{`Term ${detailContract.term}`} • {detailContract.academic_year}</div>
+                  )}
+                </div>
+                <div>
+                  <div className="text-gray-500">Financials</div>
+                  {(() => {
+                    const hours = (detailContract.courses || []).reduce((a, cc) => a + (cc.hours || 0), 0);
+                    const rate = (detailContract.hourlyRateThisYear != null && detailContract.hourlyRateThisYear !== '') ? Number(detailContract.hourlyRateThisYear) : null;
+                    const salary = (rate != null && Number.isFinite(Number(rate)) && Number.isFinite(Number(hours))) ? Number(rate) * Number(hours) : null;
+                    return (
+                      <div>
+                        <div>Rate: {rate != null ? `$${rate}/hr` : '-'}</div>
+                        <div>Hours: {hours}</div>
+                        <div>Total: {salary != null ? `$${salary.toLocaleString('en-US')}` : '-'}</div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+              <div>
+                <div className="text-gray-700 font-medium mb-2">Courses</div>
+                <div className="rounded-lg border divide-y">
+                  {(detailContract.courses || []).map((cc, idx) => (
+                    <div key={idx} className="p-3 flex items-center justify-between text-sm">
+                      <div className="min-w-0">
+                        <div className="font-medium truncate">{cc?.Course?.name_en || cc?.Course?.name || cc?.course_name || '—'}</div>
+                        <div className="text-gray-600 truncate">{cc?.Course?.code || cc?.course_code || ''}</div>
+                      </div>
+                      <div className="text-gray-700">{cc?.hours || 0}h</div>
+                    </div>
+                  ))}
+                  {!(detailContract.courses || []).length && (
+                    <div className="p-3 text-gray-500 text-sm">No courses listed</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
       </div>

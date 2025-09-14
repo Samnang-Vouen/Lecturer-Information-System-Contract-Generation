@@ -72,6 +72,18 @@ export default function UserManagement() {
         if (changed) setSearchParams(params, { replace: true });
     }, [page, limit]);
 
+    // Open create modal automatically if ?create=1 is present
+    useEffect(() => {
+        const c = searchParams.get('create');
+        if (c === '1') {
+            setIsCreateModalOpen(true);
+            // Remove the flag from URL without adding a new entry to history
+            const params = new URLSearchParams(searchParams);
+            params.delete('create');
+            setSearchParams(params, { replace: true });
+        }
+    }, []);
+
     // React to manual URL changes (back/forward)
     useEffect(() => {
         const urlPage = Math.max(parseInt(searchParams.get('page')) || 1, 1);
@@ -240,27 +252,27 @@ export default function UserManagement() {
         logout={logout}
         >
         <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50">
-            <div className="p-8 space-y-8">
+            <div className="px-4 sm:px-6 lg:px-8 py-6 space-y-6 sm:space-y-8">
                 {/* Header Section */}
-                <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-4">
-                            <div className="p-4 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl">
-                                <Users className="w-8 h-8 text-white" />
+                <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 sm:p-8">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                        <div className="flex items-center gap-3 sm:gap-4">
+                            <div className="p-3 sm:p-4 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl">
+                                <Users className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
                             </div>
                             <div>
-                                <h1 className="text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
+                                <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
                                     User Management System
                                 </h1>
-                                <p className="text-gray-600 mt-2 text-lg">Manage user accounts, roles, and permissions</p>
+                                <p className="text-gray-600 mt-1 sm:mt-2 text-sm sm:text-lg">Manage user accounts, roles, and permissions</p>
                             </div>
                         </div>
                         <Button 
                             onClick={() => setIsCreateModalOpen(true)} 
-                            className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
+                            className="w-full sm:w-auto justify-center bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-5 sm:px-6 py-2.5 sm:py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
                         >
                             <Plus className="w-5 h-5 mr-2" /> 
-                            Add New User
+                            <span>Add New User</span>
                         </Button>
                     </div>
                 </div>
@@ -278,10 +290,10 @@ export default function UserManagement() {
                             </div>
                         </div>
                     </CardHeader>
-                    <CardContent className="p-6">
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <CardContent className="p-5 sm:p-6">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-6">
                             <div className="space-y-2">
-                                <label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                                <label className="text-xs sm:text-sm font-semibold text-gray-700 flex items-center gap-2">
                                     <Search className="w-4 h-4" />
                                     Search Users
                                 </label>
@@ -297,7 +309,7 @@ export default function UserManagement() {
                             </div>
                             
                             <div className="space-y-2">
-                                <label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                                <label className="text-xs sm:text-sm font-semibold text-gray-700 flex items-center gap-2">
                                     <Shield className="w-4 h-4" />
                                     Filter by Role
                                 </label>
@@ -310,7 +322,7 @@ export default function UserManagement() {
                             </div>
                             
                             <div className="space-y-2">
-                                <label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                                <label className="text-xs sm:text-sm font-semibold text-gray-700 flex items-center gap-2">
                                     <Users className="w-4 h-4" />
                                     Filter by Department
                                 </label>
@@ -323,7 +335,7 @@ export default function UserManagement() {
                             </div>
                             
                             <div className="space-y-2">
-                                <label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                                <label className="text-xs sm:text-sm font-semibold text-gray-700 flex items-center gap-2">
                                     <Activity className="w-4 h-4" />
                                     Results per Page
                                 </label>
@@ -371,13 +383,13 @@ export default function UserManagement() {
                                     <table className="w-full">
                                         <thead className="bg-gray-50 border-b">
                                             <tr>
-                                                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">User Information</th>
-                                                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">Contact</th>
-                                                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">Role & Access</th>
-                                                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">Department</th>
-                                                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">Status</th>
-                                                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">Last Activity</th>
-                                                <th className="px-6 py-4 text-right text-sm font-bold text-gray-700 uppercase tracking-wider">Actions</th>
+                                                <th className="px-4 sm:px-6 py-3 sm:py-4 text-left text-xs sm:text-sm font-bold text-gray-700 uppercase tracking-wider">User</th>
+                                                <th className="px-4 sm:px-6 py-3 sm:py-4 text-left text-xs sm:text-sm font-bold text-gray-700 uppercase tracking-wider hidden md:table-cell">Contact</th>
+                                                <th className="px-4 sm:px-6 py-3 sm:py-4 text-left text-xs sm:text-sm font-bold text-gray-700 uppercase tracking-wider">Role</th>
+                                                <th className="px-4 sm:px-6 py-3 sm:py-4 text-left text-xs sm:text-sm font-bold text-gray-700 uppercase tracking-wider hidden lg:table-cell">Department</th>
+                                                <th className="px-4 sm:px-6 py-3 sm:py-4 text-left text-xs sm:text-sm font-bold text-gray-700 uppercase tracking-wider">Status</th>
+                                                <th className="px-4 sm:px-6 py-3 sm:py-4 text-left text-xs sm:text-sm font-bold text-gray-700 uppercase tracking-wider hidden xl:table-cell">Last Activity</th>
+                                                <th className="px-4 sm:px-6 py-3 sm:py-4 text-right text-xs sm:text-sm font-bold text-gray-700 uppercase tracking-wider">Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody className="bg-white divide-y divide-gray-200">
@@ -385,28 +397,28 @@ export default function UserManagement() {
                                                 const fullName = formatFullName(user);
                                                 return (
                                                 <tr key={user.id} className="hover:bg-blue-50 transition-colors duration-150">
-                                                    <td className="px-6 py-5">
-                                                        <div className="flex items-center space-x-3">
+                                                    <td className="px-4 sm:px-6 py-4 sm:py-5">
+                                                        <div className="flex items-center gap-3">
                                                             <div className="flex-shrink-0">
-                                                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
-                                                                    <span className="text-white font-semibold text-sm">
+                                                                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
+                                                                    <span className="text-white font-semibold text-xs sm:text-sm">
                                                                         {fullName.charAt(0).toUpperCase()}
                                                                     </span>
                                                                 </div>
                                                             </div>
                                                             <div>
-                                                                <p className="text-sm font-bold text-gray-900">{fullName}</p>
+                                                                <p className="text-sm font-bold text-gray-900 truncate max-w-[140px] sm:max-w-none">{fullName}</p>
                                                                 <p className="text-xs text-gray-500">ID: {user.id}</p>
                                                             </div>
                                                         </div>
                                                     </td>
-                                                    <td className="px-6 py-5">
-                                                        <div className="flex items-center space-x-2">
+                                                    <td className="px-4 sm:px-6 py-4 sm:py-5 hidden md:table-cell">
+                                                        <div className="flex items-center gap-2">
                                                             <Mail className="w-4 h-4 text-gray-400" />
-                                                            <span className="text-sm text-gray-900">{user.email}</span>
+                                                            <span className="text-sm text-gray-900 truncate max-w-[220px]">{user.email}</span>
                                                         </div>
                                                     </td>
-                                                    <td className="px-6 py-5">
+                                                    <td className="px-4 sm:px-6 py-4 sm:py-5">
                                                         <Badge 
                                                             variant={getRoleBadgeVariant(user.role)} 
                                                             className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold"
@@ -415,10 +427,10 @@ export default function UserManagement() {
                                                             {(user.role || '').replace('-', ' ')}
                                                         </Badge>
                                                     </td>
-                                                    <td className="px-6 py-5">
+                                                    <td className="px-4 sm:px-6 py-4 sm:py-5 hidden lg:table-cell">
                                                         <span className="text-sm text-gray-700 font-medium">{user.department}</span>
                                                     </td>
-                                                    <td className="px-6 py-5">
+                                                    <td className="px-4 sm:px-6 py-4 sm:py-5">
                                                         <Badge 
                                                             variant={user.status==='active'?'default':'secondary'} 
                                                             className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${getStatusBadgeClass(user.status)}`}
@@ -427,8 +439,8 @@ export default function UserManagement() {
                                                             {user.status}
                                                         </Badge>
                                                     </td>
-                                                    <td className="px-6 py-5">
-                                                        <div className="flex items-center space-x-2">
+                                                    <td className="px-4 sm:px-6 py-4 sm:py-5 hidden xl:table-cell">
+                                                        <div className="flex items-center gap-2">
                                                             <Calendar className="w-4 h-4 text-gray-400" />
                                                             <span className="text-sm text-gray-600">
                                                                 {user.lastLogin && user.lastLogin !== 'Never' 
@@ -437,7 +449,7 @@ export default function UserManagement() {
                                                             </span>
                                                         </div>
                                                     </td>
-                                                    <td className="px-6 py-5 text-right relative user-action-menu">
+                                                    <td className="px-4 sm:px-6 py-4 sm:py-5 text-right relative user-action-menu">
                                                         <button 
                                                             className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors" 
                                                             onClick={(e)=>{ e.stopPropagation(); openMenu(user.id,e); }}
@@ -454,15 +466,15 @@ export default function UserManagement() {
                                 
                                 {/* Enhanced Pagination */}
                                 {totalPages > 1 && (
-                                    <div className="bg-gray-50 px-6 py-4 border-t flex items-center justify-between">
-                                        <div className="flex items-center space-x-2">
-                                            <span className="text-sm text-gray-600">
+                                    <div className="bg-gray-50 px-4 sm:px-6 py-4 border-t flex flex-col sm:flex-row gap-3 sm:gap-0 sm:items-center sm:justify-between">
+                                        <div className="flex items-center">
+                                            <span className="text-xs sm:text-sm text-gray-600">
                                                 Showing <span className="font-semibold">{((page-1)*limit)+1}</span> to{' '}
                                                 <span className="font-semibold">{Math.min(page*limit, totalUsers)}</span> of{' '}
                                                 <span className="font-semibold">{totalUsers}</span> users
                                             </span>
                                         </div>
-                                        <div className="flex items-center space-x-2">
+                                        <div className="flex items-center gap-2">
                                             <button
                                                 onClick={()=> setPage(p=> Math.max(1, p-1))}
                                                 disabled={page === 1}
@@ -475,7 +487,7 @@ export default function UserManagement() {
                                                 Previous
                                             </button>
                                             
-                                            <div className="flex space-x-1">
+                                            <div className="flex gap-1">
                                                 {Array.from({ length: totalPages }, (_,i)=> i+1)
                                                     .slice(Math.max(0, page-3), page+2)
                                                     .map(p=> (

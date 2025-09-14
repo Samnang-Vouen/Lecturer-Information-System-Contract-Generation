@@ -1,5 +1,5 @@
 import sequelize from '../config/db.js';
-import { NewContract, ContractItem, User } from '../model/index.js';
+import { NewContract, ContractItem, User, Department } from '../model/index.js';
 
 export async function createContract(req, res) {
   const t = await sequelize.transaction();
@@ -7,6 +7,25 @@ export async function createContract(req, res) {
     const { lecturerId, items, start_date, end_date, salary } = req.body || {};
     if (!lecturerId || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: 'lecturerId and at least one item are required' });
+    }
+
+    // Management/Admin scoping: ensure the target lecturer is within the same department
+    const actorRole = String(req.user?.role || '').toLowerCase();
+    if (['admin','management'].includes(actorRole)) {
+      const actorDept = req.user?.department_name || null;
+      if (!actorDept) {
+        await t.rollback();
+        return res.status(403).json({ message: 'Your account is missing a department' });
+      }
+      const lecturer = await User.findByPk(lecturerId, { attributes: ['id','department_name'] });
+      if (!lecturer) {
+        await t.rollback();
+        return res.status(400).json({ message: 'Invalid lecturerId' });
+      }
+      if (String(lecturer.department_name || '') !== String(actorDept)) {
+        await t.rollback();
+        return res.status(403).json({ message: 'You can only create contracts for lecturers in your department' });
+      }
     }
 
     const contract = await NewContract.create({
@@ -36,8 +55,15 @@ export async function createContract(req, res) {
 export async function getContractById(req, res) {
   try {
     const id = parseInt(req.params.id, 10);
-    const found = await NewContract.findByPk(id, { include: [{ model: ContractItem, as: 'items' }, { model: User, as: 'lecturer', attributes: ['id','display_name','email'] }] });
+    const found = await NewContract.findByPk(id, { include: [{ model: ContractItem, as: 'items' }, { model: User, as: 'lecturer', attributes: ['id','display_name','email','department_name'] }] });
     if (!found) return res.status(404).json({ message: 'Not found' });
+    // Scope for admin/management: only same-department lecturers
+    const actorRole = String(req.user?.role || '').toLowerCase();
+    if (['admin','management'].includes(actorRole)) {
+      if (String(found.lecturer?.department_name || '') !== String(req.user?.department_name || '')) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+    }
     return res.json(found);
   } catch (e) {
     console.error('[getContractById]', e);

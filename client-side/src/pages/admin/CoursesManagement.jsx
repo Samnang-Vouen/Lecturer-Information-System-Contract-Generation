@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { Plus, Edit, Trash2, GraduationCap, Loader2, Search, BookOpen, Clock, Award, Eye } from 'lucide-react';
+import { Plus, Edit, Trash2, GraduationCap, Loader2, Search, BookOpen, Clock, Award, Eye, ChevronDown, ArrowUpDown } from 'lucide-react';
 import { useAuthStore } from '../../store/useAuthStore';
 import axiosInstance from '../../lib/axios';
 import toast from 'react-hot-toast';
@@ -8,6 +8,7 @@ import Button from '../../components/ui/Button.jsx';
 import Input from '../../components/ui/Input.jsx';
 import Textarea from '../../components/ui/Textarea.jsx';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../../components/ui/Card.jsx';
+import Select, { SelectItem } from '../../components/ui/Select.jsx';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../../components/ui/Table.jsx';
 
 export default function CoursesPage() {
@@ -243,47 +244,62 @@ export default function CoursesPage() {
 
   return (
     <div className="min-h-screen bg-gray-50/50">
-      <div className="p-6 lg:p-8 space-y-8">
+      <div className="p-4 md:p-6 lg:p-8 space-y-8">
         {/* Header */}
-        <div className="bg-white rounded-2xl border border-gray-200 p-8">
+        <div className="bg-white rounded-2xl border border-gray-200 p-4 md:p-6 lg:p-8">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-            <div className="flex items-center gap-3 mb-2">
+            <div className="flex items-center gap-3 mb-2 min-w-0">
               <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center">
                 <GraduationCap className="h-6 w-6 text-white" />
               </div>
               <div>
-                <h1 className="text-3xl font-bold text-gray-900">Course Management</h1>
+                <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Course Management</h1>
                 <p className="text-gray-600 mt-1">Manage your department's academic curriculum</p>
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center bg-gray-100 rounded-lg p-1">
-                <button onClick={() => setViewType('table')} className={`px-3 py-2 rounded-md text-sm font-medium ${viewType === 'table' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}>Table</button>
-                <button onClick={() => setViewType('grid')} className={`px-3 py-2 rounded-md text-sm font-medium ${viewType === 'grid' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}>Grid</button>
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+              <div className="flex items-center bg-gray-100 rounded-lg p-1 w-full sm:w-auto">
+                <button onClick={() => setViewType('table')} className={`flex-1 sm:flex-none px-3 py-2 rounded-md text-sm font-medium ${viewType === 'table' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}>Table</button>
+                <button onClick={() => setViewType('grid')} className={`flex-1 sm:flex-none px-3 py-2 rounded-md text-sm font-medium ${viewType === 'grid' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}>Grid</button>
               </div>
-              <Button onClick={openAdd} className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-lg hover:shadow-xl">
+              <Button onClick={openAdd} className="w-full sm:w-auto bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-lg hover:shadow-xl">
                 <Plus className="h-4 w-4 mr-2" /> Add Course
               </Button>
             </div>
           </div>
           <div className="flex flex-col sm:flex-row gap-3 sm:items-center w-full mt-6">
-            <div className="sm:w-72">
-              <Input className="h-10" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by code, name or description" />
+            <div className="w-full sm:w-56">
+              <span className="sr-only">Sort by</span>
+              <div className="relative">
+                <ArrowUpDown className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 z-10" />
+                <Select
+                  value={sortBy}
+                  onValueChange={setSortBy}
+                  className="w-full"
+                  buttonClassName="h-10 pl-9 pr-8 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500"
+                >
+                  <SelectItem value="code">Sort: Code (A–Z)</SelectItem>
+                  <SelectItem value="name">Sort: Name (A–Z)</SelectItem>
+                </Select>
+              </div>
             </div>
-            <div className="sm:w-48">
-              <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="w-full h-10 px-3 text-black bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                <option value="code">Sort: Code (A→Z)</option>
-                <option value="name">Sort: Name (A→Z)</option>
-              </select>
-            </div>
-            <div className="sm:w-48">
-              <select value={hoursFilter} onChange={e => setHoursFilter(e.target.value)} className="w-full h-10 px-3 text-black bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                <option value="">All Hours</option>
-                <option value="15">15 hours</option>
-                <option value="30">30 hours</option>
-                <option value="45">45 hours</option>
-                <option value="90">90 hours</option>
-              </select>
+            <div className="w-full sm:w-56">
+              <span className="sr-only">Hours</span>
+              <div className="relative">
+                <Clock className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 z-10" />
+                <Select
+                  value={hoursFilter}
+                  onValueChange={setHoursFilter}
+                  className="w-full"
+                  buttonClassName="h-10 pl-9 pr-8 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500"
+                >
+                  <SelectItem value="">All Hours</SelectItem>
+                  <SelectItem value="15">15 hours</SelectItem>
+                  <SelectItem value="30">30 hours</SelectItem>
+                  <SelectItem value="45">45 hours</SelectItem>
+                  <SelectItem value="90">90 hours</SelectItem>
+                </Select>
+              </div>
             </div>
           </div>
         </div>
@@ -326,7 +342,7 @@ export default function CoursesPage() {
         </div>
 
         {/* Search bar */}
-        <Card className="border-0 shadow-sm">
+          <Card className="border-0 shadow-sm">
           <CardContent className="p-6">
             <div className="flex flex-col sm:flex-row gap-4">
               <div className="relative flex-1">
@@ -334,7 +350,7 @@ export default function CoursesPage() {
                 <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search courses by code, name, or description..." className="pl-10 border-gray-200 focus:border-blue-500 focus:ring-blue-500" />
               </div>
               {search && (
-                <Button variant="outline" onClick={() => setSearch('')} className="shrink-0">Clear</Button>
+                <Button variant="outline" onClick={() => setSearch('')} className="shrink-0 w-full sm:w-auto">Clear</Button>
               )}
             </div>
           </CardContent>
@@ -428,7 +444,7 @@ export default function CoursesPage() {
 
         {/* View Dialog */}
         <Dialog open={viewOpen} onOpenChange={setViewOpen}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-[95vw] sm:max-w-2xl">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2"><BookOpen className="h-5 w-5 text-blue-600" /> Course Details</DialogTitle>
             </DialogHeader>
@@ -438,7 +454,7 @@ export default function CoursesPage() {
                   <h3 className="text-xl font-bold text-blue-900 mb-1">{selectedCourse.course_code}</h3>
                   <p className="text-blue-700 font-medium">{selectedCourse.course_name}</p>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="bg-amber-50 rounded-lg p-4">
                     <div className="flex items-center gap-2 mb-2"><Clock className="h-4 w-4 text-amber-600" /><span className="text-sm font-medium text-amber-900">Duration</span></div>
                     <p className="text-lg font-bold text-amber-800">{selectedCourse.hours || '-'} hours</p>
@@ -452,7 +468,7 @@ export default function CoursesPage() {
                   <h4 className="font-semibold text-gray-900 mb-2">Description</h4>
                   <p className="text-gray-600 leading-relaxed">{selectedCourse.description || 'No description available for this course.'}</p>
                 </div>
-                <div className="flex gap-2 justify-end pt-4 border-t"><Button variant="outline" onClick={() => setViewOpen(false)}>Close</Button><Button onClick={() => { setViewOpen(false); openEdit(selectedCourse); }}><Edit className="h-4 w-4 mr-2" /> Edit Course</Button></div>
+                <div className="flex flex-col sm:flex-row gap-2 justify-end pt-4 border-t"><Button variant="outline" onClick={() => setViewOpen(false)} className="w-full sm:w-auto">Close</Button><Button onClick={() => { setViewOpen(false); openEdit(selectedCourse); }} className="w-full sm:w-auto"><Edit className="h-4 w-4 mr-2" /> Edit Course</Button></div>
               </div>
             )}
           </DialogContent>
@@ -460,14 +476,14 @@ export default function CoursesPage() {
 
         {/* Add Dialog */}
         <Dialog open={addOpen} onOpenChange={setAddOpen}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-[95vw] sm:max-w-2xl">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2"><Plus className="h-5 w-5 text-blue-600" /> Add New Course</DialogTitle>
             </DialogHeader>
             <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Course Code *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Course Code <span className="text-red-500" aria-hidden="true">*</span></label>
                   <Input value={form.course_code} onChange={e => {
                     const raw = e.target.value || '';
                     const sanitized = raw.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
@@ -477,7 +493,7 @@ export default function CoursesPage() {
                   {formErrors.course_code && <p className="mt-1 text-xs text-red-600">{formErrors.course_code}</p>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Course Name *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Course Name <span className="text-red-500" aria-hidden="true">*</span></label>
                   <Input value={form.course_name} onChange={e => { setForm(f => ({ ...f, course_name: e.target.value })); setFormErrors(err => ({ ...err, course_name: '' })); }} placeholder="e.g., Programming Fundamentals" className="border-gray-200 focus:border-blue-500 focus:ring-blue-500" />
                   {formErrors.course_name && <p className="mt-1 text-xs text-red-600">{formErrors.course_name}</p>}
                 </div>
@@ -487,9 +503,9 @@ export default function CoursesPage() {
                 <Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Provide a brief description of the course content and objectives..." rows={4} maxLength={300} className="border-gray-200 focus:border-blue-500 focus:ring-blue-500" />
                 <div className="mt-1 text-xs text-gray-500 text-right">{(form.description || '').length}/300</div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Hours</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Hours <span className="text-red-500" aria-hidden="true">*</span></label>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {[15, 30, 45, 90].map(v => (
                       <button key={v} type="button" onClick={() => {
@@ -510,9 +526,9 @@ export default function CoursesPage() {
                   <p className="mt-1 text-xs text-gray-500">Credits are derived from hours (every 15h = 1 credit).</p>
                 </div>
               </div>
-              <div className="flex gap-2 justify-end">
-                <Button variant="outline" onClick={() => setAddOpen(false)}>Cancel</Button>
-                <Button onClick={submitAdd} disabled={creating}>{creating ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Add'}</Button>
+              <div className="flex flex-col sm:flex-row gap-2 justify-end">
+                <Button variant="outline" onClick={() => setAddOpen(false)} className="w-full sm:w-auto">Cancel</Button>
+                <Button onClick={submitAdd} disabled={creating} className="w-full sm:w-auto">{creating ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Add'}</Button>
               </div>
             </div>
           </DialogContent>
@@ -520,14 +536,14 @@ export default function CoursesPage() {
 
         {/* Edit Dialog */}
         <Dialog open={editOpen} onOpenChange={setEditOpen}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-[95vw] sm:max-w-2xl">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2"><Edit className="h-5 w-5 text-blue-600" /> Edit Course</DialogTitle>
             </DialogHeader>
             <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Course Code *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Course Code <span className="text-red-500" aria-hidden="true">*</span></label>
                   <Input value={form.course_code} onChange={e => {
                     const raw = e.target.value || '';
                     const sanitized = raw.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
@@ -536,7 +552,7 @@ export default function CoursesPage() {
                   }} className="border-gray-200 focus:border-blue-500 focus:ring-blue-500" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Course Name *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Course Name <span className="text-red-500" aria-hidden="true">*</span></label>
                   <Input value={form.course_name} onChange={e => { setForm(f => ({ ...f, course_name: e.target.value })); setFormErrors(err => ({ ...err, course_name: '' })); }} className="border-gray-200 focus:border-blue-500 focus:ring-blue-500" />
                 </div>
               </div>
@@ -545,7 +561,7 @@ export default function CoursesPage() {
                 <Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={4} maxLength={300} className="border-gray-200 focus:border-blue-500 focus:ring-blue-500" />
                 <div className="mt-1 text-xs text-gray-500 text-right">{(form.description || '').length}/300</div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm font-medium">Hours</label>
                   <div className="mt-2 flex flex-wrap gap-2">
@@ -568,9 +584,9 @@ export default function CoursesPage() {
                   <p className="mt-1 text-xs text-gray-500">Credits are derived from hours (every 15h = 1 credit).</p>
                 </div>
               </div>
-              <div className="flex gap-2 justify-end">
-                <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
-                <Button onClick={submitEdit} disabled={updating}>{updating ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save'}</Button>
+              <div className="flex flex-col sm:flex-row gap-2 justify-end">
+                <Button variant="outline" onClick={() => setEditOpen(false)} className="w-full sm:w-auto">Cancel</Button>
+                <Button onClick={submitEdit} disabled={updating} className="w-full sm:w-auto">{updating ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save'}</Button>
               </div>
             </div>
           </DialogContent>
@@ -578,7 +594,7 @@ export default function CoursesPage() {
 
         {/* Delete Dialog */}
         <Dialog open={confirmDeleteOpen} onOpenChange={(o) => { if (!o) { setConfirmDeleteOpen(false); setCourseToDelete(null); } }}>
-          <DialogContent>
+          <DialogContent className="max-w-[95vw] sm:max-w-md">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-red-600"><Trash2 className="h-5 w-5" /> Delete Course</DialogTitle>
             </DialogHeader>
@@ -586,9 +602,9 @@ export default function CoursesPage() {
               <div className="bg-red-50 border border-red-200 rounded-lg p-4">
                 <p className="text-sm text-red-800">Are you sure you want to delete <strong>{courseToDelete?.course_name}</strong>? This action cannot be undone.</p>
               </div>
-              <div className="flex gap-3 justify-end">
-                <Button variant="outline" onClick={() => { setConfirmDeleteOpen(false); setCourseToDelete(null); }} disabled={deletingId === courseToDelete?.id}>Cancel</Button>
-                <Button className="bg-red-600 hover:bg-red-700 text-white" onClick={() => deleteCourse(courseToDelete.id)} disabled={deletingId === courseToDelete?.id}>
+              <div className="flex flex-col sm:flex-row gap-2 justify-end">
+                <Button variant="outline" onClick={() => { setConfirmDeleteOpen(false); setCourseToDelete(null); }} disabled={deletingId === courseToDelete?.id} className="w-full sm:w-auto">Cancel</Button>
+                <Button className="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white" onClick={() => deleteCourse(courseToDelete.id)} disabled={deletingId === courseToDelete?.id}>
                   {deletingId === courseToDelete?.id ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Deleting...</> : <>Delete Course</>}
                 </Button>
               </div>

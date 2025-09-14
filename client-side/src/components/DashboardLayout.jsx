@@ -4,6 +4,7 @@ import { Sidebar } from "./Sidebar";
 import LoginForm from "./LoginForm";
 import { useAuthStore } from "../store/useAuthStore";
 import { Menu } from 'lucide-react';
+import { axiosInstance } from "../lib/axios";
 
 /**
  * Dashboard layout component that handles authentication state and layout
@@ -49,6 +50,8 @@ export function DashboardLayout({ children }) {
         <div className="flex h-screen bg-gray-50">
         <Sidebar user={authUser} onLogout={logout} mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
                 <main className="flex-1 overflow-auto">
+                    {/* Presence heartbeat: mark user online for their department while dashboard is open */}
+                    <PresenceHeartbeat />
                     {/* Mobile header: hamburger to open mobile sidebar */}
                     <div className="md:hidden bg-white border-b">
                         <div className="flex items-center p-3">
@@ -65,3 +68,19 @@ export function DashboardLayout({ children }) {
 }
 
 export default DashboardLayout;
+
+function PresenceHeartbeat() {
+    useEffect(() => {
+        let stopped = false;
+        let timer;
+        const beat = async () => {
+            try {
+                await axiosInstance.post('/dashboard/presence');
+            } catch {}
+            if (!stopped) timer = setTimeout(beat, 25000);
+        };
+        timer = setTimeout(beat, 0);
+        return () => { stopped = true; if (timer) clearTimeout(timer); };
+    }, []);
+    return null;
+}

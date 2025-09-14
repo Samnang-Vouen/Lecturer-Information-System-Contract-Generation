@@ -10,7 +10,11 @@ const TeachingContract = sequelize.define('TeachingContract', {
   // Optional teaching period dates
   start_date: { type: DataTypes.DATEONLY, allowNull: true },
   end_date: { type: DataTypes.DATEONLY, allowNull: true },
-  status: { type: DataTypes.ENUM('LECTURER_SIGNED','MANAGEMENT_SIGNED','COMPLETED'), allowNull: false, defaultValue: 'MANAGEMENT_SIGNED' },
+  // Statuses flow (new):
+  // - WAITING_LECTURER: contract created or management signed; awaiting lecturer signature
+  // - WAITING_MANAGEMENT: lecturer signed; awaiting management signature
+  // - COMPLETED: both signed
+  status: { type: DataTypes.ENUM('WAITING_LECTURER','WAITING_MANAGEMENT','COMPLETED'), allowNull: false, defaultValue: 'WAITING_LECTURER' },
   lecturer_signature_path: { type: DataTypes.STRING(512), allowNull: true },
   management_signature_path: { type: DataTypes.STRING(512), allowNull: true },
   lecturer_signed_at: { type: DataTypes.DATE, allowNull: true },

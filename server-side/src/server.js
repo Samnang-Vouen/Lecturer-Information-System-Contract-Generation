@@ -33,7 +33,9 @@ import swaggerUi from 'swagger-ui-express';
 import fs from 'fs';
 import path from 'path';
 
-dotenv.config();
+// Load env without noisy debug to avoid EPIPE when stdout is closed by parent
+process.env.DOTENV_CONFIG_SILENT = 'true';
+dotenv.config({ debug: false });
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -51,6 +53,12 @@ const corsOptions = {
     if (process.env.NODE_ENV !== 'production' && /^http:\/\/localhost:\d+$/i.test(origin)) {
       return callback(null, true);
     }
+    // Prevent Node from crashing on EPIPE when parent process closes stdout/stderr pipes
+    try {
+      process.stdout.on('error', (err) => { if (err && err.code === 'EPIPE') return; });
+      process.stderr.on('error', (err) => { if (err && err.code === 'EPIPE') return; });
+    } catch {}
+
     return callback(new Error('Not allowed by CORS'));
   },
   credentials: true
@@ -144,14 +152,18 @@ app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
         await addIfMissing('pdf_path', "ALTER TABLE `Teaching_Contracts` ADD COLUMN `pdf_path` VARCHAR(512) NULL AFTER `management_signed_at`");
         await addIfMissing('items', "ALTER TABLE `Teaching_Contracts` ADD COLUMN `items` TEXT NULL AFTER `pdf_path`");
 
-        // Migrate legacy DRAFT status to MANAGEMENT_SIGNED and drop DRAFT from ENUM
+        // Migrate legacy statuses to new WAITING_* values and update ENUM
         try {
           const [rows] = await sequelize.query("SHOW COLUMNS FROM `Teaching_Contracts` LIKE 'status'");
           const type = rows?.[0]?.Type || '';
-          if (/enum\(/i.test(type) && /'DRAFT'/i.test(type)) {
-            console.log('[schema] Migrating Teaching_Contracts.status: DRAFT -> MANAGEMENT_SIGNED and dropping DRAFT from enum');
-            await sequelize.query("UPDATE `Teaching_Contracts` SET `status`='MANAGEMENT_SIGNED' WHERE `status`='DRAFT'");
-            await sequelize.query("ALTER TABLE `Teaching_Contracts` MODIFY COLUMN `status` ENUM('LECTURER_SIGNED','MANAGEMENT_SIGNED','COMPLETED') NOT NULL DEFAULT 'MANAGEMENT_SIGNED'");
+          if (/enum\(/i.test(type)) {
+            // Map legacy to new prior to altering enum
+            console.log('[schema] Harmonizing Teaching_Contracts.status values');
+            try { await sequelize.query("UPDATE `Teaching_Contracts` SET `status`='WAITING_LECTURER' WHERE `status`='DRAFT'"); } catch {}
+            try { await sequelize.query("UPDATE `Teaching_Contracts` SET `status`='WAITING_MANAGEMENT' WHERE `status`='LECTURER_SIGNED'"); } catch {}
+            try { await sequelize.query("UPDATE `Teaching_Contracts` SET `status`='WAITING_LECTURER' WHERE `status`='MANAGEMENT_SIGNED'"); } catch {}
+            // Now ensure enum is the new triplet
+            await sequelize.query("ALTER TABLE `Teaching_Contracts` MODIFY COLUMN `status` ENUM('WAITING_LECTURER','WAITING_MANAGEMENT','COMPLETED') NOT NULL DEFAULT 'WAITING_LECTURER'");
           }
         } catch (e) {
           console.warn('[schema] migrate Teaching_Contracts.status failed:', e.message);

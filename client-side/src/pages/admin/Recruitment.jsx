@@ -6,7 +6,7 @@ import { isValidPhoneNumber } from 'libphonenumber-js';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
-import { Plus, Star, MessageCircle, DollarSign, CheckCircle, XCircle, User, GraduationCap, CircleCheck, AlertCircle, Edit2, Trash2, ChevronDown, Search, Eye } from 'lucide-react';
+import { Plus, Star, MessageCircle, DollarSign, CheckCircle, XCircle, User, Users, GraduationCap, CircleCheck, AlertCircle, Edit2, Trash2, ChevronDown, Search, Eye } from 'lucide-react';
 import Button from '../../components/ui/Button.jsx';
 import Input from '../../components/ui/Input.jsx';
 import Textarea from '../../components/ui/Textarea.jsx';
@@ -564,10 +564,25 @@ export default function Recruitment() {
   return (
     <div className="min-h-screen bg-gray-50 px-4 sm:px-6 py-6 overflow-x-hidden">
       <div className="max-w-7xl mx-auto space-y-6">
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Recruitment</h1>
-            <p className="text-gray-600 mt-2">Manage lecturer recruitment process</p>
+        <div className="bg-white rounded-2xl border border-gray-200 p-6 sm:p-8">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center">
+                <Users className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900">Recruitment</h1>
+                <p className="text-gray-600 mt-1">Manage lecturer recruitment process</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <Button
+                onClick={() => setActiveStep('add')}
+                className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-lg hover:shadow-xl"
+              >
+                <Plus className="h-4 w-4 mr-2" /> Add Candidate
+              </Button>
+            </div>
           </div>
         </div>
 

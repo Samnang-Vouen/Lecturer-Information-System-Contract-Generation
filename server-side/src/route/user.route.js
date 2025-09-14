@@ -1,6 +1,6 @@
 import express from 'express';
 import { protect, authorizeRoles } from '../middleware/auth.middleware.js';
-import { getAllUsers, createUser, updateUser, toggleUserStatus, deleteUser } from '../controller/user.controller.js';
+import { getAllUsers, createUser, updateUser, toggleUserStatus, deleteUser, resetUserPassword } from '../controller/user.controller.js';
 
 const router = express.Router();
 
@@ -21,5 +21,8 @@ router.patch('/:id/status', authorizeRoles(['admin','superadmin']), toggleUserSt
 
 // Delete user (superadmin only)
 router.delete('/:id', authorizeRoles(['superadmin']), deleteUser);
+
+// Reset user password (admin + superadmin)
+router.post('/reset-password', authorizeRoles(['admin','superadmin']), resetUserPassword);
 
 export default router;

@@ -5,7 +5,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   BookOpen, Calendar, Bell, RefreshCw, FileText, ArrowUp, ArrowDown, Clock,
   Activity, BarChart3, PieChart as PieChartIcon, CheckCircle, AlertCircle, XCircle, Info,
-  Zap, Settings, GraduationCap, Eye
+  Zap, Settings, GraduationCap, Eye,
+  Funnel,
+  Key,
+  Download,
+  Upload
 } from 'lucide-react';
 import {
   ResponsiveContainer, ComposedChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend,
@@ -32,9 +36,13 @@ export default function LecturerDashboard() {
   const [lastUpdated, setLastUpdated] = useState(null);
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState([]);
-  const bellRef = useRef(null);
-  const panelRef = useRef(null);
-  const NOTIF_KEY = 'lis:notifications';
+  // Management-style notification tracking
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [lastViewedAt, setLastViewedAt] = useState(0);
+  const notifContainerRef = useRef(null);
+  const lastViewedAtRef = useRef(0);
+  const showNotificationsRef = useRef(false);
+  const NOTIF_KEY = 'lis:notifications'; // legacy key, no longer primary source
   const [realTimeStats, setRealTimeStats] = useState({
     activeContracts: 0,
     expiredContracts: 0,
@@ -56,17 +64,22 @@ export default function LecturerDashboard() {
   });
   const [salaryAnalysis, setSalaryAnalysis] = useState({ totals: { khr: 0, usd: 0, hours: 0, contracts: 0 }, byContract: [], byMonth: [] });
 
-  // Helpers to persist notifications immediately (avoid losing them on fast navigations)
-  const persistNotifications = useCallback((list) => {
-    try { localStorage.setItem(NOTIF_KEY, JSON.stringify(list)); } catch {}
-    setNotifications(list);
-  }, []);
-  const markNotificationRead = useCallback((idOrKey) => {
-    setNotifications((prev) => {
-      const updated = (prev || []).map((x) => (x.id === idOrKey ? { ...x, read: true } : x));
-      try { localStorage.setItem(NOTIF_KEY, JSON.stringify(updated)); } catch {}
-      return updated;
-    });
+  // Map backend statuses to user-friendly labels and UI classes (parity with ManagementHome)
+  const statusToUi = useCallback((rawStatus) => {
+    const st = String(rawStatus || '').toUpperCase();
+    switch (st) {
+      case 'WAITING_LECTURER':
+        return { label: 'Waiting Lecturer', chipClass: 'bg-sky-50 text-sky-700 border border-sky-100', dotClass: 'bg-sky-500' };
+      case 'WAITING_MANAGEMENT':
+      case 'LECTURER_SIGNED':
+        return { label: 'Waiting Management', chipClass: 'bg-amber-50 text-amber-700 border border-amber-100', dotClass: 'bg-amber-500' };
+      case 'MANAGEMENT_SIGNED':
+        return { label: 'Waiting Lecturer', chipClass: 'bg-sky-50 text-sky-700 border border-sky-100', dotClass: 'bg-sky-500' };
+      case 'COMPLETED':
+        return { label: 'Completed', chipClass: 'bg-green-50 text-green-700 border border-green-100', dotClass: 'bg-green-500' };
+      default:
+        return { label: String(rawStatus || '').replaceAll('_', ' ') || 'Updated', chipClass: 'bg-slate-50 text-slate-700 border border-slate-200', dotClass: 'bg-slate-300' };
+    }
   }, []);
 
   // Format hours text: remove any multiplier like "× 2" while keeping the hours info
@@ -232,104 +245,37 @@ export default function LecturerDashboard() {
         // derive contractDaysLeft from nearest contract end date if present via another endpoint later; placeholder stays
       }
 
-      // Build notifications from contracts: new items when a contract needs lecturer signature
-      // or when management has signed a contract since last fetch
+      // Build notifications like ManagementHome: last 30 days of contract events
       if (contractsRes.status === 'fulfilled') {
         const list = Array.isArray(contractsRes.value?.data?.data)
           ? contractsRes.value.data.data
           : (Array.isArray(contractsRes.value?.data) ? contractsRes.value.data : []);
 
-        const loadStatusMap = () => {
-          try {
-            const raw = localStorage.getItem('lis:lastContractStatuses');
-            return raw ? JSON.parse(raw) : {};
-          } catch {
-            return {};
-          }
-        };
-        const saveStatusMap = (m) => {
-          try { localStorage.setItem('lis:lastContractStatuses', JSON.stringify(m)); } catch {}
-        };
-        const formatContractId = (c) => {
-          const year = c?.created_at ? new Date(c.created_at).getFullYear() : new Date().getFullYear();
-          return `CTR-${year}-${String(c?.id ?? '').padStart(3, '0')}`;
-        };
+        const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
+        const since = Date.now() - THIRTY_DAYS;
+        const notis = (list || [])
+          .map((c) => {
+            const d = new Date(c.updated_at || c.updatedAt || c.created_at || c.createdAt || Date.now());
+            const ts = d.getTime();
+            const ui = statusToUi(c.status);
+            return {
+              message: `Contract #${c.id} ${ui.label}.`,
+              time: d.toLocaleString(),
+              ts
+            };
+          })
+          .filter(n => (n.ts || 0) >= since)
+          .sort((a, b) => (b.ts || 0) - (a.ts || 0));
 
-  const prevMap = loadStatusMap();
-  const nextMap = { ...prevMap };
-  const newNotifs = [];
-
-        for (const c of (list || [])) {
-          const id = c?.id;
-          if (!id) continue;
-          const prev = prevMap[id];
-          const cur = c?.status;
-
-          // New or changed to a state requiring lecturer attention
-          if (cur === 'DRAFT') {
-            if (prev !== 'DRAFT') {
-              newNotifs.push({
-    id: `needs-${id}-${Date.now()}`,
-                type: 'NEEDS_SIGNATURE',
-                contractId: id,
-                message: `Contract ${formatContractId(c)} requires your signature`,
-    time: new Date().toLocaleString(),
-    createdAt: new Date().toISOString(),
-    read: false
-              });
-            }
-          } else if (cur === 'MANAGEMENT_SIGNED') {
-            if (prev !== 'MANAGEMENT_SIGNED') {
-              newNotifs.push({
-    id: `mgmt-${id}-${Date.now()}`,
-                type: 'MANAGEMENT_SIGNED',
-                contractId: id,
-                message: `Management has signed ${formatContractId(c)}. Please review & sign`,
-    time: new Date().toLocaleString(),
-    createdAt: new Date().toISOString(),
-    read: false
-              });
-            }
-          }
-
-          nextMap[id] = cur;
+        setNotifications(notis);
+        // Compute unread from last viewed timestamp (persisted separately)
+        const sinceViewed = lastViewedAtRef.current || 0;
+        if (showNotificationsRef.current) {
+          setUnreadCount(0);
+        } else {
+          const unread = notis.filter(n => (n.ts || 0) > sinceViewed).length;
+          setUnreadCount(unread);
         }
-
-        if (newNotifs.length) {
-          setNotifications((prev) => {
-            // Load persisted notifications to merge reliably
-            let base = Array.isArray(prev) ? prev : [];
-            try {
-              const raw = localStorage.getItem(NOTIF_KEY);
-              if (raw) base = JSON.parse(raw);
-            } catch {}
-
-            // Deduplicate by id
-            const merged = [...newNotifs, ...base].map((n) => ({
-              ...n,
-              createdAt: n.createdAt || new Date().toISOString(),
-              read: Boolean(n.read)
-            }));
-            const seen = new Set();
-            const deduped = [];
-            for (const n of merged) {
-              if (seen.has(n.id)) continue;
-              seen.add(n.id);
-              deduped.push(n);
-            }
-            // Prune older than 30 days and cap to 50 stored items
-            const now = Date.now();
-            const thirtyDays = 30 * 24 * 60 * 60 * 1000;
-            const pruned = deduped.filter((n) => {
-              const ts = Date.parse(n.createdAt || '');
-              if (Number.isNaN(ts)) return true; // keep if invalid timestamp
-              return (now - ts) <= thirtyDays;
-            }).slice(0, 50);
-            try { localStorage.setItem(NOTIF_KEY, JSON.stringify(pruned)); } catch {}
-            return pruned;
-          });
-        }
-        saveStatusMap(nextMap);
       }
 
       // Realtime
@@ -390,34 +336,31 @@ export default function LecturerDashboard() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTimeRange]);
 
-  // Load persisted notifications on mount and prune old ones
+  // Load persisted last seen timestamp on mount (parity with ManagementHome)
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(NOTIF_KEY);
-      if (!raw) return;
-      const list = JSON.parse(raw);
-      const now = Date.now();
-      const thirtyDays = 30 * 24 * 60 * 60 * 1000;
-      const normalized = (Array.isArray(list) ? list : []).map((n) => ({
-        ...n,
-        createdAt: n.createdAt || new Date().toISOString(),
-        read: Boolean(n.read),
-        time: n.time || (n.createdAt ? new Date(n.createdAt).toLocaleString() : new Date().toLocaleString())
-      })).filter((n) => {
-        const ts = Date.parse(n.createdAt || '');
-        if (Number.isNaN(ts)) return true;
-        return (now - ts) <= thirtyDays;
-      });
-      setNotifications(normalized);
-      // Save back pruned list
-      localStorage.setItem(NOTIF_KEY, JSON.stringify(normalized));
+      const v = Number(localStorage.getItem('lecNotifLastSeenTs')) || 0;
+      if (Number.isFinite(v) && v > 0) setLastViewedAt(v);
     } catch {}
   }, []);
 
-  // Persist notifications when they change (e.g., marking as read)
+  // Keep refs in sync with latest values
+  useEffect(() => { lastViewedAtRef.current = lastViewedAt; }, [lastViewedAt]);
+  useEffect(() => { showNotificationsRef.current = showNotifications; }, [showNotifications]);
+
+  // When panel is open and notifications exist, mark as read and persist the last seen timestamp
   useEffect(() => {
-    try { localStorage.setItem(NOTIF_KEY, JSON.stringify(notifications)); } catch {}
-  }, [notifications]);
+    if (!showNotifications || !notifications?.length) return;
+    const maxTs = notifications.reduce((m, n) => Math.max(m, n.ts || 0), lastViewedAt || 0);
+    if (maxTs > (lastViewedAt || 0)) {
+      const t = setTimeout(() => {
+        setLastViewedAt(maxTs);
+        setUnreadCount(0);
+        try { localStorage.setItem('lecNotifLastSeenTs', String(maxTs)); } catch {}
+      }, 250);
+      return () => clearTimeout(t);
+    }
+  }, [showNotifications, notifications]);
 
   useEffect(() => { fetchDashboardData(); }, [fetchDashboardData]);
 
@@ -427,39 +370,24 @@ export default function LecturerDashboard() {
     return () => clearInterval(i);
   }, [fetchDashboardData]);
 
-  // Lightweight realtime updates
+  // Frequent polling for dynamic updates (notifications, realtime stats) every 30s
   useEffect(() => {
-    const i = setInterval(async () => {
-      try {
-  const { data } = await axiosInstance.get('/lecturer-dashboard/realtime');
-        setRealTimeStats(data);
-      } catch {
-        setRealTimeStats(prev => ({
-          activeContracts: prev.activeContracts || 0,
-          expiredContracts: prev.expiredContracts || 0,
-          systemHealth: ['good', 'excellent', 'warning'][Math.floor(Math.random() * 3)]
-        }));
-      }
-    }, 30000);
+    const i = setInterval(() => fetchDashboardData(true), 30000);
     return () => clearInterval(i);
-  }, []);
+  }, [fetchDashboardData]);
 
-  // Close notifications when clicking outside or pressing Escape
+  // Close notifications when clicking outside or pressing Escape (container-based)
   useEffect(() => {
     if (!showNotifications) return;
     const onOutside = (e) => {
-      const target = e.target;
-      if (panelRef.current && panelRef.current.contains(target)) return;
-      if (bellRef.current && bellRef.current.contains(target)) return;
-      setShowNotifications(false);
+      if (!notifContainerRef.current) return;
+      if (!notifContainerRef.current.contains(e.target)) setShowNotifications(false);
     };
     const onKey = (e) => { if (e.key === 'Escape') setShowNotifications(false); };
     document.addEventListener('mousedown', onOutside);
-    document.addEventListener('touchstart', onOutside, { passive: true });
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('mousedown', onOutside);
-      document.removeEventListener('touchstart', onOutside);
       document.removeEventListener('keydown', onKey);
     };
   }, [showNotifications]);
@@ -567,51 +495,55 @@ export default function LecturerDashboard() {
             </motion.select>
 
             {/* Notifications */}
-            <div className='relative' ref={bellRef}>
-              <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setShowNotifications((v) => !v)} className='p-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors relative shadow-sm' aria-haspopup='dialog' aria-expanded={showNotifications} aria-label='Notifications'>
+            <div className='relative' ref={notifContainerRef}>
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setShowNotifications(v => !v)}
+                className='p-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors relative shadow-sm'
+                aria-haspopup='dialog'
+                aria-expanded={showNotifications}
+                aria-label='Notifications'
+              >
                 <Bell className='w-5 h-5 text-gray-600' />
-                {notifications.filter(n => !n.read).length > 0 && (
+                {unreadCount > 0 && (
                   <motion.span animate={{ scale: [1, 1.2, 1] }} transition={{ duration: 1, repeat: Infinity }} className='absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center'>
-                    {notifications.filter(n => !n.read).length}
+                    {unreadCount}
                   </motion.span>
                 )}
               </motion.button>
               <AnimatePresence>
                 {showNotifications && (
-                  <motion.div ref={panelRef} initial={{ opacity: 0, y: -10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -10, scale: 0.95 }} className='absolute right-0 top-12 w-80 max-w-[90vw] bg-white border border-gray-200 rounded-xl shadow-xl z-50'>
+                  <motion.div initial={{ opacity: 0, y: -10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -10, scale: 0.95 }} className='absolute right-0 top-12 w-80 max-w-[90vw] bg-white border border-gray-200 rounded-xl shadow-xl z-50'>
                     <div className='p-4 border-b border-gray-200'>
                       <h3 className='font-semibold text-gray-900'>Notifications</h3>
+                      <p className='text-xs text-gray-500 mt-0.5'>Last 30 days</p>
                     </div>
                     <div className='max-h-64 overflow-y-auto'>
-                      {notifications.length > 0 ? (
-                        notifications.map((n, i) => (
-                          <motion.button
-                            key={n.id || i}
-                            type='button'
-                            onClick={() => {
-                              const key = n.id || i;
-                              markNotificationRead(key);
-                              setShowNotifications(false);
-                              // Navigate after persisting
-                              window.location.href = '/lecturer/my-contracts';
-                            }}
-                            initial={{ opacity: 0, x: -20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ delay: i * 0.05 }}
-                            className={`w-full text-left p-4 border-b border-gray-100 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 ${n.read ? 'bg-white' : 'bg-blue-50/40'}`}
-                          >
-                            <div className='flex items-start gap-2'>
-                              {!n.read && <span className='mt-1 w-2 h-2 bg-blue-500 rounded-full flex-shrink-0' />}
-                              <div>
-                                <p className={`text-sm ${n.read ? 'text-gray-700' : 'text-gray-900 font-medium'}`}>{n.message || 'Notification'}</p>
-                                <p className='text-xs text-gray-500 mt-1'>{n.time || new Date().toLocaleString()}</p>
+                      {(() => {
+                        const items = [...(notifications || [])].sort((a, b) => (b.ts || 0) - (a.ts || 0));
+                        if (!items.length) return <div className='p-4 text-center text-gray-500'>No notifications</div>;
+                        return items.map((n, i) => {
+                          const isUnread = (n.ts || 0) > (lastViewedAt || 0);
+                          return (
+                            <motion.div
+                              key={`${n.ts || i}-${i}`}
+                              initial={{ opacity: 0, x: -20 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              transition={{ delay: i * 0.03 }}
+                              className={`p-4 border-b border-gray-100 hover:bg-gray-50 ${isUnread ? 'bg-blue-50/40' : ''}`}
+                            >
+                              <div className='flex items-start gap-2'>
+                                <span className={`mt-1 w-2 h-2 rounded-full ${isUnread ? 'bg-blue-500' : 'bg-gray-300'}`} />
+                                <div>
+                                  <p className={`text-sm ${isUnread ? 'text-gray-900 font-medium' : 'text-gray-800'}`}>{n.message || 'Notification'}</p>
+                                  <p className='text-xs text-gray-500 mt-1'>{n.time || new Date().toLocaleString()}</p>
+                                </div>
                               </div>
-                            </div>
-                          </motion.button>
-                        ))
-                      ) : (
-                        <div className='p-4 text-center text-gray-500'>No notifications</div>
-                      )}
+                            </motion.div>
+                          );
+                        });
+                      })()}
                     </div>
                   </motion.div>
                 )}
@@ -907,10 +839,6 @@ export default function LecturerDashboard() {
           </motion.div>
         </div>
 
-  {/* Performance Metrics and Task Breakdown removed per request */}
-
-  {/* Syllabus reminder removed from here; now shown conditionally above Assigned Course Groups */}
-
         {/* Bottom section */}
         <div className='grid grid-cols-1 lg:grid-cols-2 gap-8'>
           {/* Recent activities */}
@@ -926,7 +854,7 @@ export default function LecturerDashboard() {
                 </div>
               </div>
               <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} className='p-2 text-gray-400 hover:text-gray-600 transition-colors'>
-                <Eye className='w-4 h-4' />
+                <Funnel className='w-4 h-4' />
               </motion.button>
             </div>
             <div className='space-y-4 max-h-80 overflow-y-auto'>
@@ -940,30 +868,92 @@ export default function LecturerDashboard() {
                     </div>
                   </motion.div>
                 ))
-              ) : dashboardData.recentActivities.length > 0 ? (
-                dashboardData.recentActivities.map((activity, index) => (
-                  <motion.div key={index} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: index * 0.1 }} className='flex items-start gap-3 p-3 hover:bg-gray-50 rounded-lg transition-all duration-300 group'>
-                    <motion.div whileHover={{ scale: 1.1 }} className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                        activity.type === 'assignment' ? 'bg-purple-100 text-purple-600' :
-                        activity.type === 'class' ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-600'
-                      } group-hover:scale-110 transition-transform`}>
-                      {activity.type === 'assignment' ? <FileText className='w-4 h-4' /> : <Calendar className='w-4 h-4' />}
+              ) : (() => {
+                // Normalize, sort (desc), and take up to 5 most recent
+                const parseTs = (a) => {
+                  const v = a?.ts ?? a?.timestamp ?? a?.time ?? a?.createdAt ?? a?.updatedAt ?? a?.created_at ?? a?.updated_at;
+                  const d = v instanceof Date ? v : new Date(v);
+                  const t = d.getTime();
+                  return Number.isFinite(t) ? t : 0;
+                };
+                const items = [...(dashboardData.recentActivities || [])]
+                  .map(a => ({ ...a, _ts: parseTs(a) }))
+                  .sort((a, b) => (b._ts || 0) - (a._ts || 0))
+                  .slice(0, 5);
+
+                if (!items.length) {
+                  return (
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className='text-center py-8'>
+                      <Activity className='w-12 h-12 text-gray-300 mx-auto mb-3' />
+                      <p className='text-gray-500'>No recent activities</p>
+                      <p className='text-xs text-gray-400 mt-1'>New activities will appear here</p>
                     </motion.div>
-                    <div className='flex-1 min-w-0'>
-                      <p className='text-sm text-gray-900 font-medium group-hover:text-blue-600 transition-colors'>
-                        {activity.title || activity.description}
-                      </p>
-                      <p className='text-xs text-gray-500 mt-1'>{activity.time || new Date(activity.createdAt || Date.now()).toLocaleString()}</p>
-                    </div>
-                  </motion.div>
-                ))
-              ) : (
-                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className='text-center py-8'>
-                  <Activity className='w-12 h-12 text-gray-300 mx-auto mb-3' />
-                  <p className='text-gray-500'>No recent activities</p>
-                  <p className='text-xs text-gray-400 mt-1'>New activities will appear here</p>
-                </motion.div>
-              )}
+                  );
+                }
+
+                const formatTs = (ts) => {
+                  if (!ts) return '—';
+                  try {
+                    const d = new Date(ts);
+                    return `${d.toLocaleDateString()} – ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+                  } catch {
+                    return '—';
+                  }
+                };
+
+                const getMeta = (a) => {
+                  const t = String(a?.type || a?.action || a?.event || '').toUpperCase();
+                  // default
+                  let icon = Activity; let bubble = 'bg-gray-100 text-gray-600'; let label = a?.title || a?.description || 'Activity';
+                  let statusChip = null;
+
+                  const setStatusChip = (status) => {
+                    if (!status) return;
+                    const ui = statusToUi(status);
+                    statusChip = (
+                      <span className={`ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${ui.chipClass}`}>{ui.label}</span>
+                    );
+                  };
+
+                  if (/(SIGNED_CONTRACT|CONTRACT_SIGNED|SIGNED\s*CONTRACT|SIGN_CONTRACT)/.test(t)) {
+                    icon = CheckCircle; bubble = 'bg-green-100 text-green-600'; label = 'Signed Contract';
+                    setStatusChip(a?.status);
+                  } else if (/(EDITED_PROFILE|PROFILE_UPDATED|UPDATE_PROFILE)/.test(t)) {
+                    icon = Settings; bubble = 'bg-blue-100 text-blue-600'; label = 'Edited Profile';
+                  } else if (/(DOWNLOADED_CONTRACT|CONTRACT_DOWNLOADED|DOWNLOAD_CONTRACT)/.test(t)) {
+                    icon = Download; bubble = 'bg-indigo-100 text-indigo-600'; label = 'Downloaded Contract';
+                  } else if (/(UPDATED_PASSWORD|PASSWORD_UPDATED|UPDATE_PASSWORD|CHANGE_PASSWORD)/.test(t)) {
+                    icon = Key; bubble = 'bg-amber-100 text-amber-600'; label = 'Updated Password';
+                  } else if (/(UPLOADED_SYLLABUS|SYLLABUS_UPLOADED|UPLOAD_SYLLABUS)/.test(t)) {
+                    icon = Upload; bubble = 'bg-purple-100 text-purple-600'; label = 'Uploaded Course Syllabus';
+                  } else if (/ASSIGNMENT/.test(t)) {
+                    icon = FileText; bubble = 'bg-purple-100 text-purple-600'; label = a?.title || 'New Assignment';
+                  } else if (/CLASS/.test(t)) {
+                    icon = Calendar; bubble = 'bg-green-100 text-green-600'; label = a?.title || 'Class Update';
+                  }
+
+                  return { icon, bubble, label, statusChip };
+                };
+
+                return items.map((activity, index) => {
+                  const { icon: IconCmp, bubble, label, statusChip } = getMeta(activity);
+                  const ts = activity._ts || 0;
+                  return (
+                    <motion.div key={`${ts}-${index}`} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: index * 0.06 }} className='flex items-start gap-3 p-3 hover:bg-gray-50 rounded-lg transition-all duration-300 group'>
+                      <motion.div whileHover={{ scale: 1.1 }} className={`w-8 h-8 rounded-full flex items-center justify-center ${bubble} group-hover:scale-110 transition-transform`}>
+                        <IconCmp className='w-4 h-4' />
+                      </motion.div>
+                      <div className='flex-1 min-w-0'>
+                        <p className='text-sm text-gray-900 font-medium group-hover:text-blue-600 transition-colors'>
+                          {label}
+                          {statusChip}
+                        </p>
+                        <p className='text-xs text-gray-500 mt-1'>{formatTs(ts)}</p>
+                      </div>
+                    </motion.div>
+                  );
+                });
+              })()}
             </div>
           </motion.div>
 

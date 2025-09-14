@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { ChevronDown } from 'lucide-react';
 
 // Added className hooks to allow sizing and minor style overrides from callers
-export default function Select({ children, value, onValueChange, placeholder, className = '', buttonClassName = '', dropdownClassName = '' }) {
+export default function Select({ children, value, onValueChange, placeholder, disabled = false, className = '', buttonClassName = '', dropdownClassName = '', unstyled = false }) {
     const [isOpen, setIsOpen] = useState(false);
     const [selectedValue, setSelectedValue] = useState(value || '');
     const containerRef = useRef(null);
@@ -43,15 +43,16 @@ export default function Select({ children, value, onValueChange, placeholder, cl
         <div className={`relative ${className}`} ref={containerRef}>
             <button
                 type="button"
-                className={`w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-left focus:outline-none focus:ring-2 focus:ring-blue-500 flex items-center justify-between ${buttonClassName}`}
-                onClick={() => setIsOpen(!isOpen)}
+                className={`relative w-full px-3 pr-8 py-2 ${unstyled ? '' : 'border border-gray-300 rounded-lg bg-white'} text-left focus:outline-none flex items-center ${disabled ? 'text-gray-500 ' + (unstyled ? 'cursor-not-allowed opacity-60' : 'bg-gray-50 cursor-not-allowed opacity-60') : (unstyled ? '' : 'focus:ring-2 focus:ring-blue-500')} ${buttonClassName}`}
+                onClick={() => { if (!disabled) setIsOpen(!isOpen); }}
+                aria-disabled={disabled || undefined}
             >
-                <span className={selectedValue ? 'text-gray-900' : 'text-gray-500'}>
+                <span className={(selectedValue ? 'text-gray-900' : 'text-gray-500') + ' block leading-snug whitespace-normal break-words text-sm'}>
                     {displayLabel}
                 </span>
-                <ChevronDown className="w-4 h-4 text-gray-500" />
+                <ChevronDown className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 ${disabled ? 'text-gray-400' : 'text-gray-500'}`} />
             </button>
-            {isOpen && (
+            {isOpen && !disabled && (
                 <div className={`absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-auto ${dropdownClassName}`}>
                     {React.Children.map(children, (child) => React.cloneElement(child, { onSelect: handleSelect }))}
                 </div>

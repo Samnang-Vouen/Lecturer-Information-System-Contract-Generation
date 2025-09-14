@@ -1,20 +1,23 @@
 import React from 'react';
 
 // Tabs container: passes active value, change handler, and orientation down to children.
-export function Tabs({ children, value, onValueChange, orientation = 'auto', className, ...rest }) {
+export function Tabs({ children, value, onValueChange, onTabChange, orientation = 'auto', className, ...rest }) {
+  // Back-compat: accept onTabChange on the root and map it to onValueChange, but pass down as onChangeTab (non-DOM prop name)
+  const handleChange = onValueChange || onTabChange;
   return (
     <div className={className} {...rest}>
-      {React.Children.map(children, (child) =>
-        React.isValidElement(child)
-          ? React.cloneElement(child, { activeTab: value, onTabChange: onValueChange, orientation })
-          : child
-      )}
+      {React.Children.map(children, (child) => {
+        if (!React.isValidElement(child)) return child;
+        const isDOM = typeof child.type === 'string';
+        // Only inject custom props into React components, never native DOM elements
+        return isDOM ? child : React.cloneElement(child, { activeTab: value, onChangeTab: handleChange, orientation });
+      })}
     </div>
   );
 }
 
 // TabsList: defaults to responsive (vertical on small, horizontal on sm+) unless orientation is explicitly set or a custom className is provided
-export function TabsList({ children, activeTab, onTabChange, orientation = 'auto', className, ariaLabel, ...rest }) {
+export function TabsList({ children, activeTab, onChangeTab, orientation = 'auto', className, ariaLabel, ...rest }) {
   const hasCustom = !!className;
   let baseLayout = '';
   if (!hasCustom) {
@@ -32,17 +35,18 @@ export function TabsList({ children, activeTab, onTabChange, orientation = 'auto
       data-orientation={orientation}
       {...rest}
     >
-      {React.Children.map(children, (child) =>
-        React.isValidElement(child)
-          ? React.cloneElement(child, { activeTab, onTabChange, orientation })
-          : child
-      )}
+      {React.Children.map(children, (child) => {
+        if (!React.isValidElement(child)) return child;
+        const isDOM = typeof child.type === 'string';
+        // Avoid passing unknown props to DOM nodes to silence React warnings
+        return isDOM ? child : React.cloneElement(child, { activeTab, onChangeTab, orientation });
+      })}
     </div>
   );
 }
 
 // TabsTrigger: supports custom className; responsive default is full-width on small, flex-1 on sm+
-export function TabsTrigger({ value, children, activeTab, onTabChange, orientation = 'auto', className, ...rest }) {
+export function TabsTrigger({ value, children, activeTab, onChangeTab, orientation = 'auto', className, ...rest }) {
   const selectedClasses = 'bg-white text-blue-700 shadow-sm border border-blue-200';
   const unselectedClasses = 'text-gray-700 hover:text-gray-900 hover:bg-white/70 border border-transparent';
   let defaultLayout = '';
@@ -66,25 +70,25 @@ export function TabsTrigger({ value, children, activeTab, onTabChange, orientati
       const el = prev();
       el?.focus();
       const v = el?.getAttribute('data-value');
-      if (v && onTabChange) onTabChange(v);
+      if (v && onChangeTab) onChangeTab(v);
     } else if ((isVertical && e.key === 'ArrowDown') || (!isVertical && e.key === 'ArrowRight')) {
       e.preventDefault();
       const el = next();
       el?.focus();
       const v = el?.getAttribute('data-value');
-      if (v && onTabChange) onTabChange(v);
+      if (v && onChangeTab) onChangeTab(v);
     } else if (e.key === 'Home') {
       e.preventDefault();
       const el = tabs[0];
       el?.focus();
       const v = el?.getAttribute('data-value');
-      if (v && onTabChange) onTabChange(v);
+      if (v && onChangeTab) onChangeTab(v);
     } else if (e.key === 'End') {
       e.preventDefault();
       const el = tabs[tabs.length - 1];
       el?.focus();
       const v = el?.getAttribute('data-value');
-      if (v && onTabChange) onTabChange(v);
+      if (v && onChangeTab) onChangeTab(v);
     }
   };
   return (
@@ -95,7 +99,7 @@ export function TabsTrigger({ value, children, activeTab, onTabChange, orientati
       aria-controls={`tab-panel-${value}`}
       data-value={value}
       className={classes}
-      onClick={() => onTabChange && onTabChange(value)}
+      onClick={() => onChangeTab && onChangeTab(value)}
       onKeyDown={onKeyDown}
       {...rest}
     >
@@ -104,7 +108,7 @@ export function TabsTrigger({ value, children, activeTab, onTabChange, orientati
   );
 }
 
-export function TabsContent({ value, children, activeTab, className, ...rest }) {
+export function TabsContent({ value, children, activeTab, className, onChangeTab, orientation, ...rest }) {
   if (activeTab !== value) return null;
   return (
     <div

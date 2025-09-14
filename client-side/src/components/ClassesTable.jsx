@@ -19,18 +19,46 @@ export default function ClassesTable({
   onToggleOne = () => {},
   onToggleAll = () => {},
 }) {
-  const codeToName = React.useMemo(() => {
-    const map = new Map();
+  const { codeToName, idToName, nameSet } = React.useMemo(() => {
+    const codeMap = new Map();
+    const idMap = new Map();
+    const nameSet = new Set();
     // Support both legacy array and new paginated shape { data, ... }
     const list = Array.isArray(courseCatalog)
       ? courseCatalog
       : Array.isArray(courseCatalog.data)
         ? courseCatalog.data
         : [];
+
+    const getName = (c) => (
+      c?.course_name || c?.name_en || c?.name || c?.title || c?.Course?.name_en || c?.Course?.name || ''
+    );
+    const getCode = (c) => (
+      c?.course_code || c?.code || c?.Course?.code || ''
+    );
+    const getId = (c) => (
+      c?.id ?? c?.course_id ?? c?.Course?.id
+    );
+
     list.forEach((c) => {
-      if (c?.course_code) map.set(c.course_code, c.course_name || c.course_code);
+      const name = String(getName(c) || '').trim();
+      const code = String(getCode(c) || '').trim();
+      const id = getId(c);
+      if (name) {
+        nameSet.add(name);
+      }
+      if (code) {
+        codeMap.set(code, name || code);
+        // case-insensitive support
+        codeMap.set(code.toUpperCase(), name || code);
+        codeMap.set(code.toLowerCase(), name || code);
+      }
+      if (id != null) {
+        idMap.set(String(id), name || '');
+      }
     });
-    return map;
+
+    return { codeToName: codeMap, idToName: idMap, nameSet };
   }, [courseCatalog]);
 
   if (loading) {
@@ -126,8 +154,26 @@ export default function ClassesTable({
                 <TableCell className="text-gray-700 text-sm">{classItem.total_class}</TableCell>
                 <TableCell>
                   <div className="flex flex-wrap gap-1 max-w-xs">
-                    {(classItem.courses || []).map((courseCode, idx) => {
-                      const label = codeToName.get(courseCode) || courseCode;
+                    {(classItem.courses || []).map((entry, idx) => {
+                      // entry may be a code, id, name string, or an object
+                      let label = '';
+                      if (entry && typeof entry === 'object') {
+                        const name = entry.course_name || entry.name_en || entry.name || entry.title;
+                        const code = entry.course_code || entry.code;
+                        const id = entry.id || entry.course_id;
+                        label = (name && String(name).trim())
+                          || (code && codeToName.get(String(code)))
+                          || (id != null && idToName.get(String(id)))
+                          || '';
+                      } else {
+                        const val = String(entry ?? '').trim();
+                        // Try code match (case-insensitive), then id, then treat as plain name ONLY if it looks like a name
+                        label = codeToName.get(val) || codeToName.get(val.toUpperCase()) || codeToName.get(val.toLowerCase())
+                          || (Number.isFinite(Number(val)) ? idToName.get(val) : '')
+                          || (/\s/.test(val) ? val : '');
+                      }
+
+                      if (!label) return null; // skip showing raw codes; only show names
                       return (
                         <Badge key={idx} variant="course" className="text-[10px] px-2 py-0.5">
                           {label}
