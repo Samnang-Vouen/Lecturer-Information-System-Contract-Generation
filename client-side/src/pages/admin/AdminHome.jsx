@@ -559,14 +559,14 @@ export default function AdminHome() {
           />
           
           <StatCard
-            title="Active Contracts"
-            value={dashboardData.activeContracts.count}
-            change={dashboardData.activeContracts.change}
-            icon={RefreshCw}
-            description="Contracts not yet expired"
+            title="Completed Contracts"
+            value={statusCounts.COMPLETED}
+            change={0}
+            icon={CheckCircle}
+            description="Contracts completed"
             isLoading={isLoading}
             color="green"
-            trend={trendData.activeContracts}
+            trend={[]}
             index={2}
           />
           

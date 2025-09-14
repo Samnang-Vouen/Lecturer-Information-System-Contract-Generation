@@ -408,7 +408,7 @@ export default function UserManagement() {
                                                             </div>
                                                             <div>
                                                                 <p className="text-sm font-bold text-gray-900 truncate max-w-[140px] sm:max-w-none">{fullName}</p>
-                                                                <p className="text-xs text-gray-500">ID: {user.id}</p>
+                                                                {/* <p className="text-xs text-gray-500">ID: {user.id}</p> */}
                                                             </div>
                                                         </div>
                                                     </td>

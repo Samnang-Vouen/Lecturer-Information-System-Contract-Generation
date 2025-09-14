@@ -575,14 +575,6 @@ export default function Recruitment() {
                 <p className="text-gray-600 mt-1">Manage lecturer recruitment process</p>
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              <Button
-                onClick={() => setActiveStep('add')}
-                className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-lg hover:shadow-xl"
-              >
-                <Plus className="h-4 w-4 mr-2" /> Add Candidate
-              </Button>
-            </div>
           </div>
         </div>
 
