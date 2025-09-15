@@ -170,6 +170,7 @@ export default function AssignCoursesDialog({ open, onOpenChange, availableCours
                               checked={checked} 
                               onCheckedChange={() => onToggleCourse(code)}
                               className="h-4 w-4 mt-1"
+                              onClick={(e) => e.stopPropagation()}
                             />
                             <div className="flex-1 min-w-0">
                               <div className="flex items-start justify-between">
@@ -178,10 +179,6 @@ export default function AssignCoursesDialog({ open, onOpenChange, availableCours
                                     ${checked ? 'text-blue-900' : 'text-gray-900'}`}>
                                     {course.course_name}
                                   </h4>
-                                  <p className={`text-xs mt-1 font-mono
-                                    ${checked ? 'text-blue-600' : 'text-gray-500'}`}>
-                                    {course.course_code}
-                                  </p>
                                 </div>
                                 <div className="flex items-center space-x-4 ml-4 text-xs text-gray-500">
                                   <div className="text-right">

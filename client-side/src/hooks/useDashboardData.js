@@ -4,7 +4,7 @@ export const useDashboardData = () => {
   const [trendData, setTrendData] = useState({
     activeLecturers: [],
     pendingContracts: [],
-    renewals: [],
+  activeContracts: [],
     recruitmentInProgress: [],
     totalUsers: []
   });
@@ -24,7 +24,7 @@ export const useDashboardData = () => {
     setTrendData({
       activeLecturers: generateTrendData(45, 8),
       pendingContracts: generateTrendData(12, 3),
-      renewals: generateTrendData(8, 2),
+  activeContracts: generateTrendData(30, 5),
       recruitmentInProgress: generateTrendData(15, 4),
       totalUsers: generateTrendData(120, 15)
     });

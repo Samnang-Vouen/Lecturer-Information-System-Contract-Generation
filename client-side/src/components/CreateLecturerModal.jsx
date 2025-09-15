@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom';
-import { X, Loader2, CheckCircle2, Clipboard } from 'lucide-react';
+import { X, Loader2, CheckCircle2, Copy } from 'lucide-react';
 import { axiosInstance } from '../lib/axios';
 import toast from 'react-hot-toast';
 
@@ -159,7 +159,7 @@ export default function CreateLecturerModal({ isOpen, onClose, onLecturerCreated
                     title="Copy temp password"
                     aria-label="Copy temp password"
                   >
-                    <Clipboard className="w-4 h-4" />
+                    <Copy className="w-4 h-4" />
                   </button>
                 </div>
                 <p className="text-[10px] text-gray-500 mt-2">Masked for security. Use Copy to share privately.</p>
@@ -169,6 +169,7 @@ export default function CreateLecturerModal({ isOpen, onClose, onLecturerCreated
           ) : (
             <form onSubmit={submit} className="space-y-4">
               <h2 className="text-xl font-semibold">Add Lecturer</h2>
+              <p className="text-sm text-gray-600">Create a new lecturer account. You can write and select from accepted candidates to auto-fill details.</p>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Candidate</label>
                 <div className="relative">
@@ -216,38 +217,100 @@ export default function CreateLecturerModal({ isOpen, onClose, onLecturerCreated
               </div>
               {/* Title */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Title</label>
-                <div className={`inline-flex rounded-md overflow-hidden border ${errors.title ? 'border-red-500' : 'border-gray-300'}`}>
-                  {[
+                <label id="title-label" className="block text-sm font-medium text-gray-700 mb-2">Title</label>
+                {(() => {
+                  const titles = [
                     { key: 'Mr', label: 'Mr.' },
                     { key: 'Ms', label: 'Ms.' },
                     { key: 'Mrs', label: 'Mrs.' },
                     { key: 'Dr', label: 'Dr.' },
                     { key: 'Prof', label: 'Prof.' }
-                  ].map(t => (
-                    <button
-                      key={t.key}
-                      type="button"
-                      onClick={() => { setFormData(p => ({ ...p, title: t.key })); if (errors.title) setErrors(e => ({ ...e, title: null })); }}
-                      className={`px-3 py-1.5 text-sm ${formData.title===t.key ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
-                    >{t.label}</button>
-                  ))}
-                </div>
+                  ];
+                  const onArrow = (e, idx) => {
+                    if (!['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp'].includes(e.key)) return;
+                    e.preventDefault();
+                    const dir = (e.key === 'ArrowRight' || e.key === 'ArrowDown') ? 1 : -1;
+                    const next = (idx + dir + titles.length) % titles.length;
+                    setFormData(p => ({ ...p, title: titles[next].key }));
+                    if (errors.title) setErrors(x => ({ ...x, title: null }));
+                  };
+                  return (
+                    <div
+                      role="radiogroup"
+                      aria-labelledby="title-label"
+                      className="flex flex-wrap gap-2"
+                    >
+                      {titles.map((t, idx) => {
+                        const selected = formData.title === t.key;
+                        return (
+                          <button
+                            key={t.key}
+                            type="button"
+                            role="radio"
+                            aria-checked={selected}
+                            tabIndex={selected ? 0 : -1}
+                            onKeyDown={(e) => onArrow(e, idx)}
+                            onClick={() => {
+                              setFormData(p => ({ ...p, title: t.key }));
+                              if (errors.title) setErrors(e => ({ ...e, title: null }));
+                            }}
+                            className={`px-3 py-2 text-sm font-medium rounded-full transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-white border
+                              ${selected
+                                ? 'text-white bg-gradient-to-r from-blue-600 to-indigo-600 border-transparent shadow-sm'
+                                : 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50'}
+                            `}
+                          >
+                            {t.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
                 {errors.title && <p className="text-xs text-red-600 mt-1">{errors.title}</p>}
               </div>
               {/* Gender */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Gender</label>
-                <div className="inline-flex rounded-md overflow-hidden border border-gray-300">
-                  {['male','female','other'].map(g => (
-                    <button
-                      key={g}
-                      type="button"
-                      onClick={() => { setFormData(p => ({ ...p, gender: g })); if (errors.gender) setErrors(e => ({ ...e, gender: null })); }}
-                      className={`px-3 py-1.5 text-sm capitalize ${formData.gender===g ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
-                    >{g}</button>
-                  ))}
-                </div>
+                <label id="gender-label" className="block text-sm font-medium text-gray-700 mb-2">Gender</label>
+                {(() => {
+                  const genders = ['male', 'female', 'other'];
+                  const onArrow = (e, idx) => {
+                    if (!['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp'].includes(e.key)) return;
+                    e.preventDefault();
+                    const dir = (e.key === 'ArrowRight' || e.key === 'ArrowDown') ? 1 : -1;
+                    const next = (idx + dir + genders.length) % genders.length;
+                    setFormData(p => ({ ...p, gender: genders[next] }));
+                    if (errors.gender) setErrors(x => ({ ...x, gender: null }));
+                  };
+                  return (
+                    <div role="radiogroup" aria-labelledby="gender-label" className="flex flex-wrap gap-2">
+                      {genders.map((g, idx) => {
+                        const selected = formData.gender === g;
+                        return (
+                          <button
+                            key={g}
+                            type="button"
+                            role="radio"
+                            aria-checked={selected}
+                            tabIndex={selected ? 0 : -1}
+                            onKeyDown={(e) => onArrow(e, idx)}
+                            onClick={() => {
+                              setFormData(p => ({ ...p, gender: g }));
+                              if (errors.gender) setErrors(e => ({ ...e, gender: null }));
+                            }}
+                            className={`px-3 py-2 text-sm font-medium rounded-full transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-white border
+                              ${selected
+                                ? 'text-white bg-gradient-to-r from-blue-600 to-indigo-600 border-transparent shadow-sm'
+                                : 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50'}
+                            `}
+                          >
+                            {g.charAt(0).toUpperCase() + g.slice(1)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
                 {errors.gender && <p className="text-xs text-red-600 mt-1">{errors.gender}</p>}
               </div>
               <div>

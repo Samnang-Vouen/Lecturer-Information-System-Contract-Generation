@@ -17,7 +17,7 @@ export async function getMyCourses(req, res) {
 
     const includeWhere = {
       lecturer_user_id: lecturerUserId,
-      status: { [Op.in]: ['LECTURER_SIGNED', 'COMPLETED'] }
+      status: { [Op.in]: ['WAITING_MANAGEMENT', 'COMPLETED'] }
     };
     if (String(activeOnly) !== 'false') {
       const today = new Date();
@@ -84,7 +84,7 @@ export async function getMyCourseMappings(req, res) {
     // Fetch relevant contract courses to resolve contract end dates
     const includeWhere = {
       lecturer_user_id: userId,
-      status: { [Op.in]: ['LECTURER_SIGNED', 'COMPLETED'] }
+      status: { [Op.in]: ['WAITING_MANAGEMENT', 'COMPLETED'] }
     };
     const today = new Date();
     today.setHours(0,0,0,0);

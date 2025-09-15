@@ -465,23 +465,30 @@ export default function LecturerManagement(){
 
   // removed side drawer detail loader
 
-  return <div className='p-8 space-y-6 bg-gray-50 min-h-screen'>
+  return <div className='p-4 md:p-6 lg:p-8 space-y-6 bg-gray-50 min-h-screen'>
     <div className='flex flex-col gap-4'>
-      <div className='flex items-center justify-between'>
-        <div>
-          <h1 className='text-3xl font-bold text-gray-900'>Lecturer Management</h1>
-          <p className='text-gray-600 mt-2'>Manage lecturers (create, edit, activate/deactivate, delete)</p>
+      <div className='bg-white border border-gray-200/70 rounded-xl shadow-sm p-4 sm:p-5'>
+        <div className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4'>
+          <div className='flex items-start sm:items-center gap-4'>
+            <div className='h-12 w-12 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-sm'>
+              <Users className='h-6 w-6' />
+            </div>
+            <div>
+              <h1 className='text-2xl sm:text-3xl font-bold text-gray-900'>Lecturer Management</h1>
+              <p className='text-gray-600 mt-1'>Manage lecturers (create, edit, activate/deactivate, delete)</p>
+            </div>
+          </div>
+          {/* Right-side CTA removed per request */}
         </div>
-  {/* Removed standalone Add Lecturer button (navigation handled by tabs below) */}
       </div>
-      <div className='flex items-center justify-between'>
-        <div className='flex items-center'>
-          <div role='tablist' aria-label='Lecturer management views' className='inline-flex rounded-lg bg-gray-100 p-1 shadow-inner'>
+      <div className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3'>
+        <div className='w-full sm:w-auto flex items-center'>
+          <div role='tablist' aria-label='Lecturer management views' className='flex w-full sm:w-auto rounded-lg bg-gray-100 p-1 shadow-inner overflow-x-auto'>
             <button
               role='tab'
               aria-selected={activeView==='list'}
               onClick={()=> setActiveView('list')}
-              className={`relative px-4 py-2 text-sm font-medium rounded-md transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-white
+              className={`relative px-4 py-2 text-sm font-medium rounded-md transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-white w-full sm:w-auto flex-1 sm:flex-none
               ${activeView==='list' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-600 hover:text-gray-800 hover:bg-white/70'}`}
             >
               <span className='flex items-center gap-1'><Users className='w-4 h-4'/> Lecturer List</span>
@@ -491,7 +498,7 @@ export default function LecturerManagement(){
               role='tab'
               aria-selected={activeView==='add'}
               onClick={()=> { setActiveView('add'); }}
-              className={`relative px-4 py-2 text-sm font-medium rounded-md transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-white
+              className={`relative px-4 py-2 text-sm font-medium rounded-md transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-white w-full sm:w-auto flex-1 sm:flex-none
               ${activeView==='add' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-600 hover:text-gray-800 hover:bg-white/70'}`}
             >
               <span className='flex items-center gap-1'><Plus className='w-4 h-4'/> Add Lecturer</span>
@@ -667,7 +674,7 @@ export default function LecturerManagement(){
     setCreatedLecturers(prev=> [normalized, ...prev]); }}/>
 
     <Dialog open={isProfileDialogOpen} onOpenChange={setIsProfileDialogOpen}>
-      <DialogContent className="max-w-5xl max-h-[95vh] w-full sm:w-auto overflow-y-auto">
+  <DialogContent className="max-w-[95vw] sm:max-w-5xl max-h-[95vh] w-full overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{dialogReadonly ? 'View Lecturer Profile' : 'Edit Lecturer Profile'}</DialogTitle>
           <DialogDescription>{dialogReadonly ? 'Profile details' : 'Update lecturer information and upload documents'}</DialogDescription>
@@ -675,6 +682,7 @@ export default function LecturerManagement(){
         {selectedLecturer && (
           <div className='space-y-6'>
             <Tabs value={editTab} onValueChange={setEditTab}>
+              <div className='overflow-x-auto -mx-1 px-1'>
               <TabsList ariaLabel='Profile sections'>
                 <TabsTrigger value='basic' className='justify-start text-center whitespace-normal break-words min-w-0'>Basic Info</TabsTrigger>
                 <TabsTrigger value='bank' className='justify-start text-center whitespace-normal break-words min-w-0'>Bank Info</TabsTrigger>
@@ -682,6 +690,7 @@ export default function LecturerManagement(){
                 <TabsTrigger value='work' className='justify-start text-center whitespace-normal break-words min-w-0'>Experience</TabsTrigger>
                 <TabsTrigger value='documents' className='justify-start text-center whitespace-normal break-words min-w-0'>Documents</TabsTrigger>
               </TabsList>
+              </div>
               <TabsContent value='basic'>
                 <div className='space-y-4'>
                   <div className='grid grid-cols-1 sm:grid-cols-2 gap-4'>
@@ -942,9 +951,9 @@ export default function LecturerManagement(){
                 </div>
               </TabsContent>
             </Tabs>
-            <div className='flex justify-end gap-3 border-t pt-4'>
-              <Button variant='outline' onClick={()=> setIsProfileDialogOpen(false)}>{dialogReadonly ? 'Close' : 'Cancel'}</Button>
-              {!dialogReadonly && <Button onClick={saveEditProfile}>Save Changes</Button>}
+            <div className='flex flex-col sm:flex-row justify-end gap-2 border-t pt-4'>
+              <Button variant='outline' onClick={()=> setIsProfileDialogOpen(false)} className='w-full sm:w-auto'>{dialogReadonly ? 'Close' : 'Cancel'}</Button>
+              {!dialogReadonly && <Button onClick={saveEditProfile} className='w-full sm:w-auto'>Save Changes</Button>}
             </div>
           </div>
         )}

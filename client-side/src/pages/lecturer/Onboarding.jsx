@@ -612,7 +612,7 @@ export default function Onboarding(){
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700">English Name *</label>
+                <label className="block text-sm font-semibold text-gray-700">English Name <span className="text-red-500" aria-hidden="true">*</span><span className="sr-only"> required</span></label>
                 <Input
                   value={formData.englishName}
                   onChange={(e) => updateForm('englishName', e.target.value)}
@@ -623,7 +623,7 @@ export default function Onboarding(){
                 />
               </div>
               <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700">Khmer Name *</label>
+                <label className="block text-sm font-semibold text-gray-700">Khmer Name <span className="text-red-500" aria-hidden="true">*</span><span className="sr-only"> required</span></label>
                 <Input
                   value={formData.khmerName}
                   onChange={handleKhmerNameChange}
@@ -634,7 +634,7 @@ export default function Onboarding(){
                 />
               </div>
               <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700">Account Number *</label>
+                <label className="block text-sm font-semibold text-gray-700">Account Number <span className="text-red-500" aria-hidden="true">*</span><span className="sr-only"> required</span></label>
                 <Input
                   value={formData.accountName}
                   onChange={handleAccountChange}
@@ -647,7 +647,7 @@ export default function Onboarding(){
                 />
               </div>
               <div className="space-y-2 relative">
-                <label className="block text-sm font-semibold text-gray-700">Bank Name *</label>
+                <label className="block text-sm font-semibold text-gray-700">Bank Name <span className="text-red-500" aria-hidden="true">*</span><span className="sr-only"> required</span></label>
                 <div className="relative">
                   <Input
                     value={formData.bankName}
@@ -695,7 +695,7 @@ export default function Onboarding(){
                 )}
               </div>
               <div className="space-y-2 md:col-span-2">
-                <label className="block text-sm font-semibold text-gray-700">Account Holder Name *</label>
+                <label className="block text-sm font-semibold text-gray-700">Account Holder Name <span className="text-red-500" aria-hidden="true">*</span><span className="sr-only"> required</span></label>
                 <Input
                   value={formData.accountHolderName}
                   onChange={handleAccountHolderChange}
@@ -709,7 +709,7 @@ export default function Onboarding(){
                 />
               </div>
               <div className="space-y-2 md:col-span-2">
-                <label className="block text-sm font-semibold text-gray-700">Payroll Document (PDF or image) *</label>
+                <label className="block text-sm font-semibold text-gray-700">Payroll Document (PDF or image) <span className="text-red-500" aria-hidden="true">*</span><span className="sr-only"> required</span></label>
                 <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-gray-400 transition-colors duration-200">
                   {files.payrollFile ? (
                     <div className="flex items-center justify-center space-x-2">
@@ -750,7 +750,7 @@ export default function Onboarding(){
               {/* Departments first */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="block text-sm font-semibold text-gray-700">Departments *</label>
+                  <label className="block text-sm font-semibold text-gray-700">Departments <span className="text-red-500" aria-hidden="true">*</span><span className="sr-only"> required</span></label>
                   <span className="text-xs text-gray-500">Select one or more</span>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -784,7 +784,7 @@ export default function Onboarding(){
               {formData.departments.length > 0 && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <label className="block text-sm font-semibold text-gray-700">Courses *</label>
+                    <label className="block text-sm font-semibold text-gray-700">Courses <span className="text-red-500" aria-hidden="true">*</span><span className="sr-only"> required</span></label>
                     <span className="text-xs text-gray-500">Multiple selection</span>
                   </div>
                   <CourseMultiSelect
@@ -796,7 +796,7 @@ export default function Onboarding(){
               )}
               {/* Short Bio */}
               <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700">Short Bio *</label>
+                <label className="block text-sm font-semibold text-gray-700">Short Bio <span className="text-red-500" aria-hidden="true">*</span><span className="sr-only"> required</span></label>
                 <Textarea
                   value={formData.shortBio}
                   onChange={(e) => updateForm('shortBio', String(e.target.value || '').slice(0, SHORT_BIO_MAX))}
@@ -903,7 +903,7 @@ export default function Onboarding(){
               </div>
 
               <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700">Updated CV *</label>
+                <label className="block text-sm font-semibold text-gray-700">Updated CV <span className="text-red-500" aria-hidden="true">*</span><span className="sr-only"> required</span></label>
                 <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-gray-400 transition-colors duration-200">
                   {files.updatedCvFile ? (
                     <div className="flex items-center justify-center space-x-2">
@@ -942,7 +942,7 @@ export default function Onboarding(){
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700">University Name *</label>
+                <label className="block text-sm font-semibold text-gray-700">University Name <span className="text-red-500" aria-hidden="true">*</span><span className="sr-only"> required</span></label>
                 <div className="relative">
                   <Input
                     value={formData.universityName}
@@ -968,7 +968,7 @@ export default function Onboarding(){
                 </div>
               </div>
               <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700">Country *</label>
+                <label className="block text-sm font-semibold text-gray-700">Country <span className="text-red-500" aria-hidden="true">*</span><span className="sr-only"> required</span></label>
                 <div className="relative">
                   <Input
                     value={formData.country}
@@ -994,7 +994,7 @@ export default function Onboarding(){
                 </div>
               </div>
               <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700">Major Name *</label>
+                <label className="block text-sm font-semibold text-gray-700">Major Name <span className="text-red-500" aria-hidden="true">*</span><span className="sr-only"> required</span></label>
                 <div className="relative">
                   <Input
                     value={formData.majorName}
@@ -1020,7 +1020,7 @@ export default function Onboarding(){
                 </div>
               </div>
               <div className="space-y-2 -mt-1" ref={yearContainerRef}>
-                <Label htmlFor="graduationYear">Graduation Year *</Label>
+                <Label htmlFor="graduationYear">Graduation Year <span className="text-red-500" aria-hidden="true">*</span><span className="sr-only"> required</span></Label>
                 <div className="relative">
                   <button
                     type="button"
@@ -1049,7 +1049,7 @@ export default function Onboarding(){
                 </div>
               </div>
               <div className="space-y-2 md:col-span-2 relative">
-                <label className="block text-sm font-semibold text-gray-700">Latest Degree *</label>
+                <label className="block text-sm font-semibold text-gray-700">Latest Degree <span className="text-red-500" aria-hidden="true">*</span><span className="sr-only"> required</span></label>
                 <div className="relative">
                   <Input
                     value={formData.latestDegree ? {
@@ -1114,7 +1114,7 @@ export default function Onboarding(){
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700">Current Occupation *</label>
+                <label className="block text-sm font-semibold text-gray-700">Current Occupation <span className="text-red-500" aria-hidden="true">*</span><span className="sr-only"> required</span></label>
                 <Input
                   value={formData.occupation}
                   onChange={(e) => updateForm('occupation', e.target.value)}
@@ -1123,7 +1123,7 @@ export default function Onboarding(){
                 />
               </div>
               <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700">Place of Work *</label>
+                <label className="block text-sm font-semibold text-gray-700">Place of Work <span className="text-red-500" aria-hidden="true">*</span><span className="sr-only"> required</span></label>
                 <Input
                   value={formData.placeOfWork}
                   onChange={(e) => updateForm('placeOfWork', e.target.value)}
@@ -1141,7 +1141,7 @@ export default function Onboarding(){
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700">Phone Number *</label>
+                <label className="block text-sm font-semibold text-gray-700">Phone Number <span className="text-red-500" aria-hidden="true">*</span><span className="sr-only"> required</span></label>
                 <div>
                   <PhoneInput
                     country={'kh'}
@@ -1167,7 +1167,7 @@ export default function Onboarding(){
                 </div>
               </div>
               <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700">Personal Email *</label>
+                <label className="block text-sm font-semibold text-gray-700">Personal Email <span className="text-red-500" aria-hidden="true">*</span><span className="sr-only"> required</span></label>
                 <Input
                   type="email"
                   value={formData.personalEmail}

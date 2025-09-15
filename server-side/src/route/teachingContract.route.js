@@ -10,7 +10,7 @@ router.use(protect);
 router.get('/', authorizeRoles(['admin','lecturer','management','superadmin']), listContracts);
 
 // Admin create draft
-// Allow both admin and superadmin to create drafts
+// Allow both admin and superadmin to create drafts (management cannot create drafts)
 router.post('/', authorizeRoles(['admin','superadmin']), createDraftContract);
 
 // Fetch a contract (admin/lecturer/management)

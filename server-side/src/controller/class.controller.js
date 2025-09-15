@@ -112,9 +112,16 @@ const ClassController = {
     try {
       const classItem = await ClassModel.findByPk(req.params.id);
       if (!classItem) return res.status(404).json({ error: 'Class not found.' });
+      // Department scoping with backfill: if the class has no dept yet, assign it to the admin's dept on first update
       if (req.user?.role === 'admin' && req.user.department_name) {
         const dept = await Department.findOne({ where: { dept_name: req.user.department_name } });
-        if (dept && classItem.dept_id !== dept.id) return res.status(403).json({ error: 'Access denied: different department' });
+        if (dept) {
+          if (!classItem.dept_id) {
+            await classItem.update({ dept_id: dept.id });
+          } else if (classItem.dept_id !== dept.id) {
+            return res.status(403).json({ error: 'Access denied: different department' });
+          }
+        }
       }
       if (req.body.total_class !== undefined) {
         const parsed = Number.parseInt(req.body.total_class, 10);
@@ -146,9 +153,16 @@ const ClassController = {
     try {
       const classItem = await ClassModel.findByPk(req.params.id);
       if (!classItem) return res.status(404).json({ error: 'Class not found.' });
+      // Department scoping with backfill: if missing dept_id, attach it to admin's department on first assignment
       if (req.user?.role === 'admin' && req.user.department_name) {
         const dept = await Department.findOne({ where: { dept_name: req.user.department_name } });
-        if (dept && classItem.dept_id !== dept.id) return res.status(403).json({ error: 'Access denied: different department' });
+        if (dept) {
+          if (!classItem.dept_id) {
+            await classItem.update({ dept_id: dept.id });
+          } else if (classItem.dept_id !== dept.id) {
+            return res.status(403).json({ error: 'Access denied: different department' });
+          }
+        }
       }
   const courses = Array.isArray(req.body.courses) ? req.body.courses : [];
   await classItem.update({ courses });

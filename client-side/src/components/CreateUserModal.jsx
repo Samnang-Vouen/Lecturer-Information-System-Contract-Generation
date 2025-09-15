@@ -3,6 +3,7 @@ import ReactDOM from "react-dom";
 import { X, Loader2, CheckCircle2, Copy } from "lucide-react";
 import { axiosInstance } from "../lib/axios";
 import toast from "react-hot-toast";
+import Select, { SelectItem } from "./ui/Select.jsx";
 
 export default function CreateUserModal({ isOpen, onClose, onUserCreated }) {
   const [formData, setFormData] = useState({
@@ -194,22 +195,24 @@ export default function CreateUserModal({ isOpen, onClose, onUserCreated }) {
                   <label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-1">
                     Role <span className="text-red-500" aria-hidden="true">*</span>
                   </label>
-                  <select
-                    id="role"
-                    name="role"
+                  <Select
                     value={formData.role}
-                    onChange={handleChange}
-                    className={`w-full px-3 py-2 border rounded-md bg-white text-gray-900 ${
-                      errors.role ? "border-red-500" : "border-gray-300"
-                    } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                    onValueChange={(val) => {
+                      setFormData((prev) => ({ ...prev, role: val }));
+                      if (errors.role) setErrors((prev) => ({ ...prev, role: null }));
+                    }}
+                    placeholder="Select role"
+                    className="w-full"
+                    buttonClassName={`h-10 px-3 pr-8 text-sm border rounded-md bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 ${
+                      errors.role ? 'border-red-500' : 'border-gray-300'
+                    }`}
                   >
-                    <option value="">Select role</option>
-                    {roleOptions.map(role => (
-                      <option key={role} value={role}>
+                    {roleOptions.map((role) => (
+                      <SelectItem key={role} value={role}>
                         {role.charAt(0).toUpperCase() + role.slice(1)}
-                      </option>
+                      </SelectItem>
                     ))}
-                  </select>
+                  </Select>
                   {errors.role && (
                     <p className="mt-1 text-xs text-red-600">{errors.role}</p>
                   )}
@@ -220,22 +223,24 @@ export default function CreateUserModal({ isOpen, onClose, onUserCreated }) {
                   <label htmlFor="department" className="block text-sm font-medium text-gray-700 mb-1">
                     Department <span className="text-red-500" aria-hidden="true">*</span>
                   </label>
-                  <select
-                    id="department"
-                    name="department"
+                  <Select
                     value={formData.department}
-                    onChange={handleChange}
-                    className={`w-full px-3 py-2 border rounded-md bg-white text-gray-900 ${
-                      errors.department ? "border-red-500" : "border-gray-300"
-                    } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                    onValueChange={(val) => {
+                      setFormData((prev) => ({ ...prev, department: val }));
+                      if (errors.department) setErrors((prev) => ({ ...prev, department: null }));
+                    }}
+                    placeholder="Select department"
+                    className="w-full"
+                    buttonClassName={`h-10 px-3 pr-8 text-sm border rounded-md bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 ${
+                      errors.department ? 'border-red-500' : 'border-gray-300'
+                    }`}
                   >
-                    <option value="">Select department</option>
-                    {departmentOptions.map(dept => (
-                      <option key={dept} value={dept}>
+                    {departmentOptions.map((dept) => (
+                      <SelectItem key={dept} value={dept}>
                         {dept}
-                      </option>
+                      </SelectItem>
                     ))}
-                  </select>
+                  </Select>
                   {errors.department && (
                     <p className="mt-1 text-xs text-red-600">{errors.department}</p>
                   )}

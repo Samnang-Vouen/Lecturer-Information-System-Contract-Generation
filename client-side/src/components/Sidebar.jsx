@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/useAuthStore";
 import Button from "./ui/Button.jsx";
 import { 
@@ -126,6 +126,7 @@ const navItems = [
 
 export function Sidebar({ user: userProp, onLogout, mobileOpen = false, onClose = () => {} }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const { user: storeUser, logout: storeLogout } = useAuthStore();
   
   const [collapsed, setCollapsed] = useState(() => {
@@ -247,7 +248,23 @@ export function Sidebar({ user: userProp, onLogout, mobileOpen = false, onClose 
       <div key={item.title} className="mb-1">
         {item.hasSubmenu ? (
           <button
-            onClick={() => toggleItem(item.title)}
+            onClick={(e) => {
+              // Prevent any accidental navigation or click-through when expanding
+              e.preventDefault?.();
+              e.stopPropagation?.();
+              if (collapsed) {
+                // When collapsed, expand sidebar and open this submenu so child icons are visible
+                try { localStorage.setItem('sidebarCollapsed', 'false'); } catch {}
+                setCollapsed(false);
+                setExpandedItems(prev => {
+                  const next = { ...prev, [item.title]: true };
+                  try { localStorage.setItem('expandedItems', JSON.stringify(next)); } catch {}
+                  return next;
+                });
+                return;
+              }
+              toggleItem(item.title);
+            }}
             className={cn(
               "w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 hover:bg-blue-50",
               collapsed ? 'justify-center px-3' : 'justify-start',

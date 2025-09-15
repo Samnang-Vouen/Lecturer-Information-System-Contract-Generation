@@ -8,8 +8,12 @@ import { Plus, Search, FileText, Ellipsis, Eye, Download, Loader2, Info, CheckCi
 import Textarea from '../../components/ui/Textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../../components/ui/Dialog';
 import { Checkbox } from '../../components/ui/Checkbox';
+import { useAuthStore } from '../../store/useAuthStore';
 
 export default function ContractGeneration() {
+  // Pull current user for client-side scoping hints
+  // Note: enforcement is server-side; this only helps hide out-of-scope rows if any leak
+  const { authUser } = useAuthStore();
   // ...existing code... (keeping all the helper functions and state unchanged)
   const toInt = (v) => {
     const n = Number(v);
@@ -173,15 +177,17 @@ export default function ContractGeneration() {
     };
     const qRaw = normalize(search || '');
     const qName = stripTitle(qRaw);
-    if (!qName) return contracts || [];
-    return (contracts || []).filter(c => {
+  // Rely on server-side scoping for admins/management; do not re-filter by department here
+  const pool = (contracts || []);
+    if (!qName) return pool;
+    return pool.filter(c => {
       const lecturerTitle = normalize(c.lecturer?.LecturerProfile?.title || c.lecturer?.title || '');
       const lecturerNameBase = normalize(c.lecturer?.display_name || c.lecturer?.full_name || c.lecturer?.email || '');
       const fullName = `${lecturerTitle ? lecturerTitle + ' ' : ''}${lecturerNameBase}`.trim();
       const candidate = stripTitle(fullName);
       return candidate.startsWith(qName);
     });
-  }, [contracts, search]);
+  }, [contracts, search, authUser]);
 
   // ...existing functions...
   const handleCreateContract = async () => {
@@ -447,9 +453,51 @@ export default function ContractGeneration() {
     window.open(url, '_blank');
   };
 
-  const downloadPdfFor = (id) => {
-    const url = `${axiosInstance.defaults.baseURL}/teaching-contracts/${id}/pdf`;
-    window.open(url, '_blank');
+  // Build a readable, safe PDF filename based on lecturer title + name (e.g., Dr_Sok_Veasna.pdf)
+  const lecturerFilename = (lecturer) => {
+    if (!lecturer) return null;
+    const rawTitle = lecturer?.LecturerProfile?.title || lecturer?.title || '';
+    let base = lecturer?.display_name || lecturer?.full_name || lecturer?.full_name_english || lecturer?.full_name_khmer || lecturer?.name || lecturer?.email || '';
+    if (base.includes('@')) base = base.split('@')[0];
+    const norm = (s='') => String(s).toLowerCase().replace(/[\.]/g, '').trim();
+    const t = norm(rawTitle);
+    const prettyTitle = t === 'dr' ? 'Dr' : t === 'prof' || t === 'professor' ? 'Prof' : t === 'mr' ? 'Mr' : t === 'ms' || t === 'miss' ? 'Ms' : t === 'mrs' ? 'Mrs' : (rawTitle ? rawTitle : '');
+    const parts = [];
+    if (prettyTitle) parts.push(String(prettyTitle).replace(/[\.]/g, ''));
+    if (base) parts.push(String(base));
+    let combined = parts.join(' ').trim();
+    // Sanitize and convert spaces to underscores
+    combined = combined.replace(/[\/:*?"<>|]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .replace(/[\.]/g, '')
+      .trim()
+      .replace(/\s/g, '_')
+      .replace(/_+/g, '_');
+    if (!combined) return null;
+    return `${combined}.pdf`;
+  };
+
+  const downloadPdfFor = async (input) => {
+    if (!input) return;
+    const c = (typeof input === 'object' && input) ? input : (contracts || []).find(x => x.id === input);
+    const id = (typeof input === 'object' && input) ? input.id : input;
+    if (!id) return;
+    let filename = (c && c.lecturer) ? lecturerFilename(c.lecturer) : null;
+    if (!filename) filename = `contract-${id}.pdf`;
+    try {
+      const res = await axiosInstance.get(`/teaching-contracts/${id}/pdf`, { responseType: 'blob' });
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      // silently ignore download errors
+    }
   };
 
   const deleteContract = async (id) => {
@@ -519,19 +567,28 @@ export default function ContractGeneration() {
   return (
     <div className="p-4 md:p-6 space-y-6">
       {/* Page header */}
-      <div className="flex items-start md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-gray-900">Contract Management</h1>
-          <p className="text-gray-600 mt-1">Generate and manage lecturer contracts</p>
+      <div className="bg-white rounded-2xl border border-gray-200 p-4 md:p-6 lg:p-8">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+          <div className="flex items-center gap-3 mb-2 min-w-0">
+            <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center">
+              <GraduationCap className="h-6 w-6 text-white" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-2xl sm:text-3xl leading-tight font-bold text-gray-900">Contract Management</h1>
+              <p className="text-gray-600 mt-1">Generate and manage lecturer contracts</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <Button onClick={() => setDlgOpen(true)} className="w-full sm:w-auto bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-lg hover:shadow-xl">
+              <Plus className="h-4 w-4 mr-2" /> Generate Contract
+            </Button>
+          </div>
         </div>
-        <Button onClick={() => setDlgOpen(true)} className="inline-flex items-center gap-2 cursor-pointer bg-blue-600 hover:bg-blue-700">
-          <Plus className="w-4 h-4" /> Generate Contract
-        </Button>
       </div>
 
       {/* Generate New Contract Dialog */}
       <Dialog open={dlgOpen} onOpenChange={setDlgOpen}>
-        <DialogContent className="w-full max-w-2xl p-0 overflow-hidden">
+        <DialogContent className="w-full max-w-[95vw] sm:max-w-2xl p-0 overflow-hidden">
           <DialogHeader className="px-6 pt-5">
             <DialogTitle>Generate New Contract</DialogTitle>
             <DialogDescription>Fill in the details below to generate a new contract.</DialogDescription>
@@ -545,13 +602,13 @@ export default function ContractGeneration() {
             {/* Academic Year */}
             <div className="space-y-1 mb-4">
               <label className="block text-sm font-medium">Academic Year</label>
-              <Input className="cursor-pointer h-11 text-base shadow-sm" value={academicYear} onChange={e=>setAcademicYear(e.target.value)} />
+              <Input className="w-full cursor-pointer h-11 text-base shadow-sm" value={academicYear} onChange={e=>setAcademicYear(e.target.value)} />
               <p className="text-xs text-gray-500">Lecturers are sourced from Accepted course mappings of this year.</p>
             </div>
             {/* Lecturer Information */}
             <div className="space-y-1 mb-4">
               <label className="block text-sm font-medium">Lecturer Name <span className="text-red-600">*</span></label>
-              <Select className="cursor-pointer" value={dlgLecturerId} onValueChange={async (val)=>{
+              <Select className="w-full cursor-pointer" value={dlgLecturerId} onValueChange={async (val)=>{
                 setDlgLecturerId(val);
                 setDlgErrors(prev=>({ ...prev, lecturer: '' }));
                 setDlgSelectedMappingIds(new Set());
@@ -576,13 +633,13 @@ export default function ContractGeneration() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <div className="space-y-1 md:col-span-2">
                 <label className="block text-sm font-medium">Hourly Rate ($)</label>
-                <Input className="cursor-pointer h-11 text-base shadow-sm" value={dlgHourlyRate} readOnly />
+                <Input className="w-full cursor-pointer h-11 text-base shadow-sm" value={dlgHourlyRate} readOnly />
                 {dlgErrors.hourlyRate && <p className="text-xs text-red-600">{dlgErrors.hourlyRate}</p>}
               </div>
               <div className="space-y-1 md:col-span-2">
                 <label className="block text-sm font-medium">Start Date <span className="text-red-600">*</span></label>
                 <div className="relative group">
-                  <Input ref={startRef} className="cursor-pointer h-11 text-base pr-10 shadow-sm min-w-[220px]" type="date" value={dlgStartDate} min={new Date().toISOString().slice(0,10)} onChange={e=>{ setDlgStartDate(e.target.value); setDlgErrors(prev=>({ ...prev, startDate: '' })); }}/>
+                  <Input ref={startRef} className="w-full cursor-pointer h-11 text-base pr-10 shadow-sm sm:min-w-[220px]" type="date" value={dlgStartDate} min={new Date().toISOString().slice(0,10)} onChange={e=>{ setDlgStartDate(e.target.value); setDlgErrors(prev=>({ ...prev, startDate: '' })); }}/>
                   <button type="button" aria-label="Pick start date" className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-gray-500 hover:text-gray-700 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30" onClick={()=>{ try { startRef.current?.showPicker?.(); } catch { startRef.current?.focus?.(); } }}>
                     <Calendar className="w-4 h-4" />
                   </button>
@@ -592,7 +649,7 @@ export default function ContractGeneration() {
               <div className="space-y-1 md:col-span-2">
                 <label className="block text-sm font-medium">End Date <span className="text-red-600">*</span></label>
                 <div className="relative group">
-                  <Input ref={endRef} className="cursor-pointer h-11 text-base pr-10 shadow-sm min-w-[220px]" type="date" value={dlgEndDate} min={dlgStartDate || new Date().toISOString().slice(0,10)} onChange={e=>{ setDlgEndDate(e.target.value); setDlgErrors(prev=>({ ...prev, endDate: '' })); }}/>
+                  <Input ref={endRef} className="w-full cursor-pointer h-11 text-base pr-10 shadow-sm sm:min-w-[220px]" type="date" value={dlgEndDate} min={dlgStartDate || new Date().toISOString().slice(0,10)} onChange={e=>{ setDlgEndDate(e.target.value); setDlgErrors(prev=>({ ...prev, endDate: '' })); }}/>
                   <button type="button" aria-label="Pick end date" className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-gray-500 hover:text-gray-700 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30" onClick={()=>{ try { endRef.current?.showPicker?.(); } catch { endRef.current?.focus?.(); } }}>
                     <Calendar className="w-4 h-4" />
                   </button>
@@ -605,7 +662,7 @@ export default function ContractGeneration() {
             <div className="space-y-2">
               <label className="block text-sm font-medium">Duties (press Enter to add) <span className="text-red-600">*</span></label>
               <Input
-                className="cursor-pointer"
+                className="w-full cursor-pointer"
                 value={dlgItemInput}
                 onChange={e => { setDlgItemInput(e.target.value); if (dlgErrors.description) setDlgErrors(prev=>({ ...prev, description: '' })); }}
                 onKeyDown={e => {
@@ -641,7 +698,7 @@ export default function ContractGeneration() {
               <div className="flex items-center gap-2 mb-2">
                 <div className="relative w-full">
                   <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <Input className="pl-9" placeholder="Search by course name/code or class…" value={dlgCourseQuery} onChange={e=>setDlgCourseQuery(e.target.value)} />
+                  <Input className="w-full pl-9" placeholder="Search by course name/code or class…" value={dlgCourseQuery} onChange={e=>setDlgCourseQuery(e.target.value)} />
                 </div>
                 {dlgCourseQuery && (
                   <button onClick={()=>setDlgCourseQuery('')} className="text-xs text-gray-500 hover:text-gray-700">Clear</button>
@@ -680,7 +737,7 @@ export default function ContractGeneration() {
                             {canCombineTheory && (
                               <label className="mt-2 inline-flex items-center gap-2 text-xs text-gray-700 select-none">
                                 <Checkbox checked={combined} onCheckedChange={(v)=> setDlgCombineByMapping(prev => ({ ...prev, [m.id]: !!v }))} />
-                                Combine into 1 <span className="text-gray-500">({theory15 ? '15h' : '30h'})</span>
+                                Combine groups into 1 class<span className="text-gray-500">({theory15 ? '15h' : '30h'})</span>
                               </label>
                             )}
                             {estSalary != null && (
@@ -696,9 +753,9 @@ export default function ContractGeneration() {
               {dlgErrors.courses && <p className="text-xs text-red-600 mt-1">{dlgErrors.courses}</p>}
             </div>
           </div>
-          <div className="px-6 py-4 border-t flex justify-end gap-2">
-            <Button variant="outline" className="cursor-pointer" onClick={()=> setDlgOpen(false)}>Cancel</Button>
-            <Button className="cursor-pointer" onClick={handleCreateContract}>Generate Contract</Button>
+          <div className="px-6 py-4 border-t flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+            <Button variant="outline" className="w-full sm:w-auto cursor-pointer" onClick={()=> setDlgOpen(false)}>Cancel</Button>
+            <Button className="w-full sm:w-auto cursor-pointer" onClick={handleCreateContract}>Generate Contract</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -756,18 +813,18 @@ export default function ContractGeneration() {
       )}
 
       {/* Search & filter bar */}
-      <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-3 md:p-4 flex flex-col md:flex-row md:items-center gap-3">
+  <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-3 md:p-4 flex flex-col md:flex-row md:items-center gap-3">
         <div className="flex-1">
           <div className="relative">
             <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <Input className="pl-9 rounded-xl" placeholder="Search lecturer name without title" value={search} onChange={e=>{ setSearch(e.target.value); setPage(1); }} />
+    <Input className="w-full pl-9 rounded-xl" placeholder="Search lecturer name without title" value={search} onChange={e=>{ setSearch(e.target.value); setPage(1); }} />
           </div>
         </div>
-        <div className="min-w-[160px]">
+    <div className="w-full md:w-auto md:min-w-[160px]">
           <Select value={statusFilter} onValueChange={v=>{ setStatusFilter(v); setPage(1); }} placeholder="All Status">
             <SelectItem value="">All Status</SelectItem>
-            <SelectItem value="LECTURER_SIGNED">Lecturer Signed</SelectItem>
-            <SelectItem value="MANAGEMENT_SIGNED">Management Signed</SelectItem>
+            <SelectItem value="WAITING_MANAGEMENT">Waiting Management</SelectItem>
+            <SelectItem value="WAITING_LECTURER">Waiting Lecturer</SelectItem>
             <SelectItem value="COMPLETED">Completed</SelectItem>
           </Select>
         </div>
@@ -775,7 +832,7 @@ export default function ContractGeneration() {
 
       {/* Contracts Grid */}
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <FileText className="w-5 h-5 text-blue-600"/>
             <h2 className="text-lg font-semibold">Contracts ({total})</h2>
@@ -821,13 +878,17 @@ export default function ContractGeneration() {
             const hasBothDates = !!(startDate && endDate);
             const hasAnyDate = !!(startDate || endDate);
             const period = `Term ${c.term} • ${c.academic_year}`;
-            const dept = c.lecturer?.department_name || 'N/A';
+            // Prefer department from the course include (server-scoped), fallback to lecturer's department
+            const dept = (c.courses && c.courses[0] && c.courses[0].Course && c.courses[0].Course.Department && c.courses[0].Course.Department.dept_name)
+              || c.lecturer?.department_name || 'N/A';
             const lecturerTitle = c.lecturer?.LecturerProfile?.title || c.lecturer?.title || '';
             const lecturerNameBase = c.lecturer?.display_name || c.lecturer?.full_name || c.lecturer?.email;
             const lecturerName = `${lecturerTitle ? lecturerTitle + '. ' : ''}${lecturerNameBase || ''}`.trim();
             const statusMap = {
-              LECTURER_SIGNED: { label: 'Waiting Management', class: 'bg-blue-50 text-blue-700 border-blue-200', icon: Info },
+              WAITING_MANAGEMENT: { label: 'Waiting Management', class: 'bg-blue-50 text-blue-700 border-blue-200', icon: Info },
+              WAITING_LECTURER: { label: 'Waiting Lecturer', class: 'bg-amber-50 text-amber-700 border-amber-200', icon: Clock },
               MANAGEMENT_SIGNED: { label: 'Waiting Lecturer', class: 'bg-amber-50 text-amber-700 border-amber-200', icon: Clock },
+              LECTURER_SIGNED: { label: 'Waiting Management', class: 'bg-blue-50 text-blue-700 border-blue-200', icon: Info },
               COMPLETED: { label: 'Completed', class: 'bg-green-50 text-green-700 border-green-200', icon: CheckCircle2 },
             };
             const st = statusMap[c.status] || { label: String(c.status||'').toLowerCase(), class: 'bg-gray-100 text-gray-700 border-gray-200' };
@@ -843,7 +904,7 @@ export default function ContractGeneration() {
                   <div className="contract-action-menu">
                     <button
                       type="button"
-                      className="opacity-0 group-hover:opacity-100 inline-flex items-center justify-center w-8 h-8 rounded-md hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-opacity"
+                      className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 inline-flex items-center justify-center w-8 h-8 rounded-md hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-opacity"
                       onClick={(e) => openMenu(c.id, e)}
                       aria-label="Open actions"
                     >
@@ -874,8 +935,8 @@ export default function ContractGeneration() {
                 {/* Period */}
                 <div className="mb-4">
                   <div className="flex items-center gap-2 text-xs text-gray-600 mb-1">
-                    <Calendar className="w-3 h-3" />
-                    <span>Contract Period</span>
+                    <Calendar className="w-3 h-3 text-gray-500" />
+                    <span className="text-sm font-medium text-gray-700">Contract Period</span>
                   </div>
                   {hasBothDates ? (
                     <div className="text-sm">
@@ -895,8 +956,8 @@ export default function ContractGeneration() {
                 {/* Financial Info */}
                 <div className="mb-4">
                   <div className="flex items-center gap-2 text-xs text-gray-600 mb-1">
-                    <DollarSign className="w-3 h-3" />
-                    <span>Financial Details</span>
+                    <DollarSign className="w-3 h-3 text-gray-500" />
+                    <span className="text-sm font-medium text-gray-700">Financial Details</span>
                   </div>
                   <div className="space-y-1">
                     <div className="flex justify-between text-sm">

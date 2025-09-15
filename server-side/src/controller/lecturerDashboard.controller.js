@@ -18,21 +18,30 @@ export async function getLecturerDashboardSummary(req, res) {
       return res.status(403).json({ message: 'Forbidden' });
     }
 
-    // Scope to current lecturer by default; admins can pass ?userId=
-    const lecturerUserId = role === 'lecturer' ? req.user.id : parseInt(req.query.userId, 10) || req.user.id;
+    // Scope to current lecturer by default; admins can pass ?userId=. Management is restricted to own dept only.
+    let lecturerUserId = role === 'lecturer' ? req.user.id : parseInt(req.query.userId, 10) || req.user.id;
+    if (role === 'management') {
+      // If a different userId is requested, ensure it belongs to same department
+      if (lecturerUserId !== req.user.id) {
+        const target = await User.findByPk(lecturerUserId, { attributes: ['id','department_name'] });
+        if (!target || String(target.department_name || '') !== String(req.user.department_name || '')) {
+          return res.status(403).json({ message: 'Access denied' });
+        }
+      }
+    }
 
     // Counts
     const totalContracts = await TeachingContract.count({ where: { lecturer_user_id: lecturerUserId } });
     const signedContracts = await TeachingContract.count({
-      where: { lecturer_user_id: lecturerUserId, status: { [Op.in]: ['LECTURER_SIGNED', 'COMPLETED'] } }
+      where: { lecturer_user_id: lecturerUserId, status: { [Op.in]: ['WAITING_MANAGEMENT', 'COMPLETED'] } }
     });
     // Waiting Management = lecturer has signed, awaiting management signature
     const waitingManagement = await TeachingContract.count({
-      where: { lecturer_user_id: lecturerUserId, status: 'LECTURER_SIGNED' }
+      where: { lecturer_user_id: lecturerUserId, status: 'WAITING_MANAGEMENT' }
     });
     // Pending lecturer signature = waiting for lecturer to sign (management already signed)
     const pendingSignatures = await TeachingContract.count({
-      where: { lecturer_user_id: lecturerUserId, status: 'MANAGEMENT_SIGNED' }
+      where: { lecturer_user_id: lecturerUserId, status: 'WAITING_LECTURER' }
     });
 
     // Syllabus reminder (if not uploaded in LecturerProfile)
@@ -56,7 +65,7 @@ export async function getLecturerDashboardSummary(req, res) {
     }
 
   // Only show courses from signed (active) contracts; exclude MANAGEMENT_SIGNED (waiting for lecturer)
-  const contractStatuses = ['LECTURER_SIGNED', 'COMPLETED'];
+  const contractStatuses = ['WAITING_MANAGEMENT', 'COMPLETED'];
 
     // Current teaching courses (active contracts in current term/year)
     const courseWhere = {};
@@ -121,7 +130,15 @@ export async function getLecturerRealtime(req, res) {
       return res.status(403).json({ message: 'Forbidden' });
     }
     // Scope to current lecturer by default; admins can pass ?userId=
-    const lecturerUserId = role === 'lecturer' ? req.user.id : parseInt(req.query.userId, 10) || req.user.id;
+    let lecturerUserId = role === 'lecturer' ? req.user.id : parseInt(req.query.userId, 10) || req.user.id;
+    if (role === 'management') {
+      if (lecturerUserId !== req.user.id) {
+        const target = await User.findByPk(lecturerUserId, { attributes: ['id','department_name'] });
+        if (!target || String(target.department_name || '') !== String(req.user.department_name || '')) {
+          return res.status(403).json({ message: 'Access denied' });
+        }
+      }
+    }
 
     // Compute counts based on start_date/end_date window
     const today = new Date();
@@ -164,7 +181,15 @@ export async function getLecturerActivities(req, res) {
     if (!['lecturer', 'admin', 'management', 'superadmin'].includes(role)) {
       return res.status(403).json({ message: 'Forbidden' });
     }
-    const lecturerUserId = role === 'lecturer' ? req.user.id : parseInt(req.query.userId, 10) || req.user.id;
+    let lecturerUserId = role === 'lecturer' ? req.user.id : parseInt(req.query.userId, 10) || req.user.id;
+    if (role === 'management') {
+      if (lecturerUserId !== req.user.id) {
+        const target = await User.findByPk(lecturerUserId, { attributes: ['id','department_name'] });
+        if (!target || String(target.department_name || '') !== String(req.user.department_name || '')) {
+          return res.status(403).json({ message: 'Access denied' });
+        }
+      }
+    }
     // Use recent changes in TeachingContractCourse as pseudo-activities
     const rows = await TeachingContractCourse.findAll({
       include: [{

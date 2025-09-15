@@ -118,19 +118,19 @@ export default function AdminProfile() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 py-8">
+    <div className="min-h-screen bg-slate-50 py-6 sm:py-8">
       {/* Header Section */}
-      <div className="max-w-7xl mx-auto px-6 mb-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 mb-8">
         <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="bg-gradient-to-r from-indigo-600 via-blue-600 to-blue-600 px-8 py-12">
-            <div className="flex items-center space-x-6">
-              <div className="w-24 h-24 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center">
-                <UserCircle className="w-12 h-12 text-white" />
+          <div className="bg-gradient-to-r from-indigo-600 via-blue-600 to-blue-600 px-4 sm:px-8 py-8 sm:py-12">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-start gap-4 sm:gap-6">
+              <div className="w-20 h-20 sm:w-24 sm:h-24 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center mx-auto sm:mx-0">
+                <UserCircle className="w-10 h-10 sm:w-12 sm:h-12 text-white" />
               </div>
-              <div className="text-white">
-                <h1 className="text-4xl font-bold mb-2">{profile?.fullName || "Administrator"}</h1>
-                <p className="text-white/80 text-lg">{profile?.email}</p>
-                <div className="flex items-center space-x-4 mt-3">
+              <div className="text-white text-center sm:text-left">
+                <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold mb-1 sm:mb-2">{profile?.fullName || "Administrator"}</h1>
+                <p className="text-white/80 text-base sm:text-lg">{profile?.email}</p>
+                <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 sm:gap-4 mt-3">
                   <span className="inline-flex items-center px-3 py-1 rounded-full bg-white/20 backdrop-blur-sm text-sm font-medium">
                     <Shield className="w-4 h-4 mr-2" />
                     {profile?.role}
@@ -149,8 +149,8 @@ export default function AdminProfile() {
       </div>
 
       {/* Content Section */}
-      <div className="max-w-7xl mx-auto px-6">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
           {/* Profile Details Card */}
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100">

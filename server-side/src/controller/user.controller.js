@@ -28,9 +28,10 @@ export const getAllUsers = async (req, res) => {
 
     const andConditions = [];
     // Department scoping & role visibility configuration
-    let includeSuperAdmin = true;
-    let effectiveDeptFilter = deptFilter;
-    if (req.user?.role === 'admin') {
+  let includeSuperAdmin = true;
+  let effectiveDeptFilter = deptFilter;
+  const actorRole = (req.user?.role || '').toLowerCase();
+  if (actorRole === 'admin' || actorRole === 'management') {
       // Force to admin's own department; hide superadmin entirely
       effectiveDeptFilter = req.user.department_name || null;
       includeSuperAdmin = false;
@@ -421,5 +422,46 @@ export const deleteUser = async (req, res) => {
     return res.json({ message: 'User deleted' });
   } catch (e) {
     console.error('deleteUser error', e); return res.status(500).json({ message: 'Failed to delete user' });
+  }
+};
+
+/**
+ * Admin/Superadmin: Reset a user's password
+ * @route POST /api/users/reset-password
+ * @access Private (Admin + Superadmin)
+ * Body: { email: string, newPassword?: string }
+ */
+export const resetUserPassword = async (req, res) => {
+  try {
+    let { email, newPassword } = req.body || {};
+    email = String(email || '').trim().toLowerCase();
+    if (!email) return res.status(400).json({ message: 'Email is required' });
+    const user = await User.findOne({ where: { email } });
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    // Only allow resetting non-superadmin unless actor is superadmin
+    const isTargetSuper = email === 'superadmin@cadt.edu.kh';
+    const actorRole = (req.user?.role || '').toLowerCase();
+    if (isTargetSuper && actorRole !== 'superadmin') {
+      return res.status(403).json({ message: 'Only superadmin can reset superadmin password' });
+    }
+
+    // Generate temp password if not provided
+    if (!newPassword) {
+      const TEMP_LEN = 10;
+      let tmp = '';
+      while (tmp.length < TEMP_LEN) tmp += Math.random().toString(36).slice(2);
+      newPassword = tmp.slice(0, TEMP_LEN);
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: 'New password must be at least 6 characters' });
+    }
+
+    const hashed = await bcrypt.hash(newPassword, 10);
+    await user.update({ password_hash: hashed });
+    return res.json({ message: 'Password reset successfully', email: user.email, tempPassword: newPassword });
+  } catch (e) {
+    console.error('resetUserPassword error', e.message);
+    return res.status(500).json({ message: 'Failed to reset password' });
   }
 };

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
-import { Plus, AlertCircle } from 'lucide-react';
+import { Plus, AlertCircle, GraduationCap } from 'lucide-react';
 import ClassesTable from "../../components/ClassesTable";
 import ClassFormDialog from "../../components/ClassFormDialog";
 import AssignCoursesDialog from "../../components/AssignCoursesDialog";
@@ -309,10 +309,12 @@ export default function ClassesManagement() {
     setLoading(true);
     axiosInstance.put(`/classes/${assigningClass.id}/courses`, { courses: selectedCourses })
       .then(() => {
-        setClasses(prev => prev.map(c => c.id === assigningClass.id ? { ...c, courses: selectedCourses } : c));
+  // Update list and keep local selection in sync (don't wipe it)
+  setClasses(prev => prev.map(c => c.id === assigningClass.id ? { ...c, courses: selectedCourses } : c));
+  // If we're editing this class, reflect new courses
+  setEditingClass(prev => prev && prev.id === assigningClass.id ? { ...prev, courses: selectedCourses } : prev);
         setIsCourseAssignDialogOpen(false);
         setAssigningClass(null);
-        setSelectedCourses([]);
         setError("");
       })
       .catch((err) => {
@@ -344,37 +346,47 @@ export default function ClassesManagement() {
   const filteredClasses = getFilteredClasses();
 
   return (
-    <div className="p-8 space-y-6">
+    <div className="p-4 md:p-6 lg:p-8 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-800 mb-1">Classes Management</h1>
-          <p className="text-gray-600">Manage academic classes and assign courses</p>
-        </div>
-        <Button className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2" onClick={() => setIsAddDialogOpen(true)}>
-          <Plus className="h-4 w-4" /> Add Class
-        </Button>
-      </div>
-
-      {/* Filter Controls */}
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2">
-          <Label className="text-gray-700" htmlFor="academic-year-filter">Filter by Academic Year:</Label>
-          <div className="w-48">
-            <Select
-              value={selectedAcademicYear}
-              onValueChange={setSelectedAcademicYear}
-              placeholder="Select academic year"
-            >
-              <SelectItem value="all">All Academic Years</SelectItem>
-              {getUniqueAcademicYears().map(year => (
-                <SelectItem key={year} value={year}>{year}</SelectItem>
-              ))}
-            </Select>
+      <div className="bg-white rounded-2xl border border-gray-200 p-4 md:p-6 lg:p-8">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+          <div className="flex items-center gap-3 mb-2 min-w-0">
+            <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center">
+              <GraduationCap className="h-6 w-6 text-white" />
+            </div>
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Classes Management</h1>
+              <p className="text-gray-600 mt-1">Manage academic classes and assign courses</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <Button onClick={() => setIsAddDialogOpen(true)} className="w-full sm:w-auto bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-lg hover:shadow-xl">
+              <Plus className="h-4 w-4 mr-2" /> Add Class
+            </Button>
           </div>
         </div>
-        <div className="text-sm text-gray-500">
-          Showing <span className="font-medium text-gray-700">{filteredClasses.length}</span> of <span className="font-medium text-gray-700">{classes.length}</span> classes
+        {/* Filter Controls */}
+        <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between w-full mt-6">
+          <div className="flex items-center gap-2">
+            <Label className="text-sm text-gray-700" htmlFor="academic-year-filter">Filter by Academic Year:</Label>
+            <div className="sm:w-56 w-full">
+              <Select
+                value={selectedAcademicYear}
+                onValueChange={setSelectedAcademicYear}
+                placeholder="Select academic year"
+                className="w-full"
+                buttonClassName="h-10 pr-8 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500"
+              >
+                <SelectItem value="all">All Academic Years</SelectItem>
+                {getUniqueAcademicYears().map(year => (
+                  <SelectItem key={year} value={year}>{year}</SelectItem>
+                ))}
+              </Select>
+            </div>
+          </div>
+          <div className="text-sm text-gray-500 sm:ml-auto">
+            Showing <span className="font-medium text-gray-700">{filteredClasses.length}</span> of <span className="font-medium text-gray-700">{classes.length}</span> classes
+          </div>
         </div>
       </div>
 
@@ -382,20 +394,21 @@ export default function ClassesManagement() {
       {error && !isErrorDialogOpen && <div className="text-sm mb-2 text-red-600">{error}</div>}
 
       {/* Classes Table */}
-      <ClassesTable
-        classes={filteredClasses}
-        onEdit={handleEditClass}
-        onDelete={handleDeleteClass}
-        onAssignCourses={handleAssignCourses}
-        loading={loading}
-        courseCatalog={availableCourses}
-        title="Academic Classes"
-        description="Overview of all academic classes in your department"
-      />
+      <div className="overflow-x-auto">
+        <ClassesTable
+          classes={filteredClasses}
+          onEdit={handleEditClass}
+          onDelete={handleDeleteClass}
+          loading={loading}
+          courseCatalog={availableCourses}
+          title="Academic Classes"
+          description="Overview of all academic classes in your department"
+        />
+      </div>
 
       {/* Error Dialog */}
       <Dialog open={isErrorDialogOpen} onOpenChange={setIsErrorDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-[95vw] sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-red-600">
               <AlertCircle className="h-5 w-5" />
@@ -407,7 +420,7 @@ export default function ClassesManagement() {
             <div className="flex justify-center">
               <Button
                 onClick={() => setIsErrorDialogOpen(false)}
-                className="bg-red-600 hover:bg-red-700 text-white min-w-[100px]"
+                className="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white min-w-[100px]"
               >
                 OK
               </Button>
@@ -418,8 +431,8 @@ export default function ClassesManagement() {
 
       {/* Confirm Delete Dialog */}
       {isConfirmDeleteOpen && classToDelete && (
-        <Dialog open={isConfirmDeleteOpen} onOpenChange={(open) => { setIsConfirmDeleteOpen(open); if (!open) setClassToDelete(null); }}>
-          <DialogContent>
+  <Dialog open={isConfirmDeleteOpen} onOpenChange={(open) => { setIsConfirmDeleteOpen(open); if (!open) setClassToDelete(null); }}>
+    <DialogContent className="max-w-[95vw] sm:max-w-md">
             <DialogHeader>
               <DialogTitle>Confirm Deletion</DialogTitle>
             </DialogHeader>
@@ -430,13 +443,13 @@ export default function ClassesManagement() {
               <div className="flex flex-col sm:flex-row gap-2 sm:justify-center">
                 <Button
                   onClick={performDeleteClass}
-                  className="bg-red-600 hover:bg-red-700 text-white sm:min-w-[120px]"
+                  className="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white sm:min-w-[120px]"
                   disabled={deleting}
                 >{deleting ? 'Deleting…' : 'OK'}</Button>
                 <Button
                   variant="outline"
                   onClick={() => { setIsConfirmDeleteOpen(false); setClassToDelete(null); }}
-                  className="sm:min-w-[120px]"
+                  className="w-full sm:w-auto sm:min-w-[120px]"
                   disabled={deleting}
                 >Cancel</Button>
               </div>
@@ -459,9 +472,9 @@ export default function ClassesManagement() {
         classData={newClass}
         setClassData={setNewClass}
         isEdit={false}
-        availableCourses={availableCourses}
+        onAssignCourses={handleAssignCourses}
+        courseCatalog={availableCourses}
         selectedCourses={selectedCourses}
-        onCourseToggle={handleCourseToggle}
       />
 
       {/* Edit Class Dialog */}
@@ -472,9 +485,9 @@ export default function ClassesManagement() {
         classData={editingClass || initialClassState}
         setClassData={setEditingClass}
         isEdit={true}
-        availableCourses={availableCourses}
+        onAssignCourses={handleAssignCourses}
+        courseCatalog={availableCourses}
         selectedCourses={selectedCourses}
-        onCourseToggle={handleCourseToggle}
       />
 
       {/* Assign Courses Dialog */}

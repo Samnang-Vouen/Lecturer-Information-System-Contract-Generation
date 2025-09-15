@@ -44,6 +44,8 @@ export default function ManagementHome() {
     pendingApprovals: 0,
     systemHealth: 'good'
   });
+  const [signedLecturersCount, setSignedLecturersCount] = useState(0);
+  const [expiredCount, setExpiredCount] = useState(0);
 
   const [dashboard, setDashboard] = useState({
     totals: { all: 0, lecturerSigned: 0, mgmtSigned: 0, completed: 0 },
@@ -65,6 +67,10 @@ export default function ManagementHome() {
   const statusToUi = useCallback((rawStatus) => {
     const st = String(rawStatus || '').toUpperCase();
     switch (st) {
+      case 'WAITING_LECTURER':
+        return { label: 'Waiting Lecturer', chipClass: 'bg-sky-50 text-sky-700 border border-sky-100', dotClass: 'bg-sky-500' };
+      case 'WAITING_MANAGEMENT':
+        return { label: 'Waiting Management', chipClass: 'bg-amber-50 text-amber-700 border border-amber-100', dotClass: 'bg-amber-500' };
       case 'MANAGEMENT_SIGNED':
         return { label: 'Waiting Lecturer', chipClass: 'bg-sky-50 text-sky-700 border border-sky-100', dotClass: 'bg-sky-500' };
       case 'LECTURER_SIGNED':
@@ -202,20 +208,24 @@ export default function ManagementHome() {
       if (showRefresh) setIsRefreshing(true); else setIsLoading(true);
 
       // Fetch real data from contracts and users; compute dashboard locally
-      const [contractsRes, healthRes] = await Promise.allSettled([
+      const [contractsRes, healthRes, waitMgmtTotalRes, completedTotalRes] = await Promise.allSettled([
         axiosInstance.get('/teaching-contracts', { params: { page: 1, limit: 100 } }),
-        axiosInstance.get('/health')
+        axiosInstance.get('/health'),
+        // Department-scoped total of contracts waiting management (lecturer signed)
+        axiosInstance.get('/teaching-contracts', { params: { page: 1, limit: 1, status: 'WAITING_MANAGEMENT' } }),
+        // Department-scoped total of completed contracts (lecturer has signed and management too)
+        axiosInstance.get('/teaching-contracts', { params: { page: 1, limit: 1, status: 'COMPLETED' } })
       ]);
 
       let contracts = [];
       if (contractsRes.status === 'fulfilled') contracts = contractsRes.value.data?.data || [];
 
-      // Totals from real contracts
+      // Totals from real contracts (support new and legacy statuses)
       const totals = contracts.reduce((acc, c) => {
         const st = String(c.status || '').toUpperCase();
         acc.all += 1;
-        if (st === 'LECTURER_SIGNED') acc.lecturerSigned += 1; // awaiting mgmt
-        else if (st === 'MANAGEMENT_SIGNED') acc.mgmtSigned += 1; // awaiting lecturer
+        if (st === 'WAITING_MANAGEMENT' || st === 'LECTURER_SIGNED') acc.lecturerSigned += 1; // awaiting management
+        else if (st === 'WAITING_LECTURER' || st === 'MANAGEMENT_SIGNED' || st === 'DRAFT') acc.mgmtSigned += 1; // awaiting lecturer
         else if (st === 'COMPLETED') acc.completed += 1;
         return acc;
       }, { all: 0, lecturerSigned: 0, mgmtSigned: 0, completed: 0 });
@@ -223,26 +233,48 @@ export default function ManagementHome() {
       // Monthly trends based on real timestamps
   const monthly = buildMonthlySeries(contracts, selectedTimeRange);
 
-      // Recent activities (latest updates)
-      const recent = [...contracts]
-        .sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0))
-        .slice(0, 8)
-        .map(c => {
+      // Recent activities: latest actions performed by management users in their department(s)
+      // Use management_signed_at to infer management-led actions and show lecturer when relevant
+      const recent = (() => {
+        const events = [];
+        for (const c of (contracts || [])) {
+          const ms = c.management_signed_at || c.managementSignedAt;
+          if (!ms) continue;
+          const ts = new Date(ms);
+          if (isNaN(ts.getTime())) continue;
           const ui = statusToUi(c.status);
           const who = (c.lecturer?.display_name || c.lecturer?.email || 'Lecturer');
           const time = new Date(c.updated_at || c.created_at).toLocaleString();
-          return {
-            message: `Contract #${c.id} • ${who} → ${ui.label}`,
+          events.push({
+            ts: ts.getTime(),
+            message: `${who}'s contract`,
             time,
             statusLabel: ui.label,
             chipClass: ui.chipClass,
             dotClass: ui.dotClass
-          };
-        });
+          });
+        }
+        // Include a login activity on initial load to reflect a management action
+        if (!showRefresh) {
+          const now = new Date();
+          events.push({
+            ts: now.getTime(),
+            message: 'Management login',
+            time: now.toLocaleString(),
+            statusLabel: 'Management activity',
+            chipClass: 'bg-violet-50 text-violet-700 border border-violet-100',
+            dotClass: 'bg-violet-500'
+          });
+        }
+        return events
+          .sort((a, b) => (b.ts || 0) - (a.ts || 0))
+          .slice(0, 5)
+          .map(({ ts, ...rest }) => rest);
+      })();
 
-      setDashboard({ totals, monthly, recentActivities: recent });
+  setDashboard({ totals, monthly, recentActivities: recent });
 
-      // Notifications: last 30 days, with automatic cleanup of older items
+  // Notifications: last 30 days, with automatic cleanup of older items
       const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
       const since = Date.now() - THIRTY_DAYS;
       const notis = contracts
@@ -267,14 +299,14 @@ export default function ManagementHome() {
       }
 
   // Real-time bar values
-  // Online Users: number of lecturers currently signed under this management (management-signed or completed)
+  // Online Users: number of lecturers currently signed under this management (management-signed/waiting_lecturer or completed)
       let onlineUsers = 0;
       try {
         const signedLecturerIds = new Set(
           (contracts || [])
             .filter(c => {
               const st = String(c.status || '').toUpperCase();
-              return st === 'MANAGEMENT_SIGNED' || st === 'COMPLETED';
+              return st === 'WAITING_LECTURER' || st === 'MANAGEMENT_SIGNED' || st === 'COMPLETED';
             })
             .map(c =>
               // Try various possible id fields
@@ -289,6 +321,40 @@ export default function ManagementHome() {
   const systemHealth = (healthRes.status === 'fulfilled' && healthRes.value.data?.status === 'ok') ? 'excellent' : 'warning';
   // pendingApprovals here represents contracts waiting on the lecturer's signature
   setRealTimeStats({ onlineUsers, activeContracts: totals.all, pendingApprovals: totals.mgmtSigned, systemHealth });
+      // Signed Lecturers: lecturer has signed -> WAITING_MANAGEMENT + COMPLETED
+      let totalSigned = 0;
+      let gotAny = false;
+      if (waitMgmtTotalRes.status === 'fulfilled') {
+        totalSigned += Number(waitMgmtTotalRes.value?.data?.total || 0);
+        gotAny = true;
+      }
+      if (completedTotalRes.status === 'fulfilled') {
+        totalSigned += Number(completedTotalRes.value?.data?.total || 0);
+        gotAny = true;
+      }
+      if (!gotAny) {
+        // Fallback to local computation from current page of contracts
+        totalSigned = (contracts || []).reduce((acc, c) => {
+          const st = String(c.status || '').toUpperCase();
+          return acc + ((st === 'WAITING_MANAGEMENT' || st === 'COMPLETED') ? 1 : 0);
+        }, 0);
+      }
+      setSignedLecturersCount(totalSigned);
+
+      // Expired contracts: end_date earlier than today (dept scoped via backend response)
+      const isExpired = (c) => {
+        const end = c?.end_date || c?.endDate;
+        if (!end) return false;
+        try {
+          const endD = new Date(end);
+          if (isNaN(endD.getTime())) return false;
+          const today = new Date();
+          endD.setHours(0,0,0,0);
+          today.setHours(0,0,0,0);
+          return endD < today;
+        } catch { return false; }
+      };
+      setExpiredCount((contracts || []).filter(isExpired).length);
 
       setLastUpdated(new Date());
     } catch (e) {
@@ -534,7 +600,7 @@ export default function ManagementHome() {
               <motion.div whileHover={{ scale: 1.05 }} className='flex items-center gap-2'>
                 <Activity className='w-4 h-4 text-green-500' />
                 <span className='text-sm text-gray-600'>Signed Lecturers:</span>
-                <span className='font-semibold text-gray-900'>{realTimeStats.onlineUsers}</span>
+                <span className='font-semibold text-gray-900'>{signedLecturersCount}</span>
               </motion.div>
               <motion.div whileHover={{ scale: 1.05 }} className='flex items-center gap-2'>
                 <FileText className='w-4 h-4 text-blue-500' />
@@ -542,9 +608,9 @@ export default function ManagementHome() {
                 <span className='font-semibold text-gray-900'>{realTimeStats.activeContracts}</span>
               </motion.div>
               <motion.div whileHover={{ scale: 1.05 }} className='flex items-center gap-2'>
-                <Clock className='w-4 h-4 text-amber-500' />
-                <span className='text-sm text-gray-600'>Waiting Lecturer:</span>
-                <span className='font-semibold text-gray-900'>{realTimeStats.pendingApprovals}</span>
+                <AlertCircle className='w-4 h-4 text-red-500' />
+                <span className='text-sm text-gray-600'>Expired Contracts:</span>
+                <span className='font-semibold text-gray-900'>{expiredCount}</span>
               </motion.div>
             </div>
             <div className='flex items-center gap-2'>

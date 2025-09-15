@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/useAuthStore';
 import { axiosInstance } from '../../lib/axios';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -15,12 +16,13 @@ import {
 } from 'recharts';
 
 export default function AdminHome() {
+  const navigate = useNavigate();
   const { authUser } = useAuthStore();
   const { trendData } = useDashboardData();
   const [dashboardData, setDashboardData] = useState({
     activeLecturers: { count: 0, change: 0, trend: [] },
     pendingContracts: { count: 0, change: 0, trend: [] },
-    renewals: { count: 0, change: 0, trend: [] },
+  activeContracts: { count: 0, change: 0, trend: [] },
     recruitmentInProgress: { count: 0, change: 0, trend: [] },
     totalUsers: { count: 0, change: 0, trend: [] },
     recentActivities: [],
@@ -34,6 +36,7 @@ export default function AdminHome() {
   const [realTimeStats, setRealTimeStats] = useState({
     onlineUsers: 0,
     activeContracts: 0,
+  expiredContracts: 0,
     systemHealth: 'good'
   });
   const [notifications, setNotifications] = useState([]);
@@ -51,29 +54,48 @@ export default function AdminHome() {
     gradient: ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#06B6D4']
   };
 
-  // Sample chart data (this would come from your API)
-  const monthlyTrendsData = [
-    { month: 'Jan', lecturers: 45, contracts: 32, applications: 78, revenue: 125000 },
-    { month: 'Feb', lecturers: 52, contracts: 38, applications: 85, revenue: 132000 },
-    { month: 'Mar', lecturers: 48, contracts: 35, applications: 92, revenue: 128000 },
-    { month: 'Apr', lecturers: 61, contracts: 42, applications: 105, revenue: 145000 },
-    { month: 'May', lecturers: 58, contracts: 39, applications: 98, revenue: 138000 },
-    { month: 'Jun', lecturers: 65, contracts: 45, applications: 112, revenue: 152000 }
-  ];
+  // Monthly trends from server; fallback to sample if unavailable
+  const monthlyTrendsData = (dashboardData.monthlyTrends && dashboardData.monthlyTrends.length)
+    ? dashboardData.monthlyTrends
+    : [
+        { month: 'Jan', lecturers: 45, contracts: 32, applications: 78 },
+        { month: 'Feb', lecturers: 52, contracts: 38, applications: 85 },
+        { month: 'Mar', lecturers: 48, contracts: 35, applications: 92 },
+        { month: 'Apr', lecturers: 61, contracts: 42, applications: 105 },
+        { month: 'May', lecturers: 58, contracts: 39, applications: 98 },
+        { month: 'Jun', lecturers: 65, contracts: 45, applications: 112 }
+      ];
 
-  const departmentDistribution = [
-    { name: 'Computer Science', value: 35, color: chartColors.primary },
-    { name: 'Mathematics', value: 25, color: chartColors.secondary },
-    { name: 'Physics', value: 20, color: chartColors.success },
-    { name: 'Chemistry', value: 15, color: chartColors.warning },
-    { name: 'Others', value: 5, color: chartColors.error }
+  // Department distribution from server (global): lecturers per department across the system
+  const distributionList = Array.isArray(dashboardData?.departmentStats?.distribution)
+    ? dashboardData.departmentStats.distribution
+    : [];
+  const colorPalette = [
+    '#3B82F6', // blue
+    '#8B5CF6', // purple
+    '#10B981', // green
+    '#F59E0B', // amber
+    '#EF4444', // red
+    '#06B6D4', // cyan
+    '#A855F7', // violet
+    '#6366F1', // indigo
+    '#14B8A6', // teal
+    '#F97316', // orange
+    '#DC2626', // rose
+    '#0EA5E9', // sky
   ];
+  const departmentDistribution = distributionList.map((item, idx) => ({
+    name: String(item.name || ''),
+    value: Number(item.value || 0),
+    color: colorPalette[idx % colorPalette.length]
+  }));
 
+  // Contract status from server (Teaching_Contracts): WAITING_LECTURER, WAITING_MANAGEMENT, COMPLETED
+  const statusCounts = dashboardData?.contractStatus || { WAITING_LECTURER: 0, WAITING_MANAGEMENT: 0, COMPLETED: 0 };
   const contractStatusData = [
-    { status: 'Active', count: 45, color: chartColors.success },
-    { status: 'Pending', count: 12, color: chartColors.warning },
-    { status: 'Expired', count: 8, color: chartColors.error },
-    { status: 'Draft', count: 6, color: chartColors.info }
+    { status: 'Waiting Lecturer', key: 'WAITING_LECTURER', count: Number(statusCounts.WAITING_LECTURER || 0), color: chartColors.warning },
+    { status: 'Waiting Management', key: 'WAITING_MANAGEMENT', count: Number(statusCounts.WAITING_MANAGEMENT || 0), color: chartColors.info },
+    { status: 'Completed', key: 'COMPLETED', count: Number(statusCounts.COMPLETED || 0), color: chartColors.success }
   ];
 
   const performanceMetrics = [
@@ -83,126 +105,80 @@ export default function AdminHome() {
     { metric: 'System Uptime', value: 99.8, target: 99.5, color: chartColors.info }
   ];
 
-  // Dynamic data fetching with multiple endpoints
+  // Dynamic data fetching (server-side authority)
+  const lastPendingCountRef = useRef(0);
+
   const fetchDashboardData = useCallback(async (showRefresh = false) => {
     try {
       if (showRefresh) setIsRefreshing(true);
       else setIsLoading(true);
 
-      // Fetch multiple endpoints in parallel for dynamic data
-      const [statsResponse, activitiesResponse, notificationsResponse, realTimeResponse] = await Promise.allSettled([
+      const [
+        statsRes,
+        realtimeRes,
+        notificationsRes,
+        waitLecturerRes,
+        waitManagementRes,
+        statusWaitingLecturerRes,
+        statusWaitingManagementRes,
+        statusCompletedRes
+      ] = await Promise.all([
         axiosInstance.get(`/dashboard/stats?timeRange=${selectedTimeRange}`),
-        axiosInstance.get('/dashboard/activities'),
-        axiosInstance.get('/dashboard/notifications'),
-        axiosInstance.get('/dashboard/realtime')
+        axiosInstance.get('/dashboard/realtime'),
+        axiosInstance.get('/dashboard/notifications').catch(() => ({ data: [] })),
+        // Use server-side totals for pending statuses; backend maps MANAGEMENT_SIGNED->WAITING_LECTURER and LECTURER_SIGNED->WAITING_MANAGEMENT
+        axiosInstance.get('/teaching-contracts', { params: { page: 1, limit: 1, status: 'MANAGEMENT_SIGNED' } }).catch(() => ({ data: { total: 0 } })),
+        axiosInstance.get('/teaching-contracts', { params: { page: 1, limit: 1, status: 'LECTURER_SIGNED' } }).catch(() => ({ data: { total: 0 } })),
+        // Explicit per-status totals for the Contract Status chart (already dept-scoped by backend)
+        axiosInstance.get('/teaching-contracts', { params: { page: 1, limit: 1, status: 'WAITING_LECTURER' } }).catch(() => ({ data: { total: 0 } })),
+        axiosInstance.get('/teaching-contracts', { params: { page: 1, limit: 1, status: 'WAITING_MANAGEMENT' } }).catch(() => ({ data: { total: 0 } })),
+        axiosInstance.get('/teaching-contracts', { params: { page: 1, limit: 1, status: 'COMPLETED' } }).catch(() => ({ data: { total: 0 } }))
       ]);
 
-      // Process stats data
-      if (statsResponse.status === 'fulfilled') {
-        setDashboardData(prev => ({
-          ...prev,
-          ...statsResponse.value.data,
-          lastFetch: new Date().toISOString()
-        }));
-      } else {
-        // Fetch individual endpoints as fallback
-        await fetchFallbackData();
+      const rawStats = statsRes.data || {};
+      const normalizedStats = { ...rawStats };
+      if (normalizedStats.renewals && !normalizedStats.activeContracts) {
+        normalizedStats.activeContracts = normalizedStats.renewals;
+        delete normalizedStats.renewals;
       }
 
-      // Process activities
-      if (activitiesResponse.status === 'fulfilled') {
-        setDashboardData(prev => ({
-          ...prev,
-          recentActivities: activitiesResponse.value.data.slice(0, 10)
-        }));
-      }
+  // Derive Pending Contracts using server totals (already scoped to admin's department by backend)
+  const pendingCount = Number(waitLecturerRes?.data?.total || 0) + Number(waitManagementRes?.data?.total || 0);
+      const prevCount = Number(lastPendingCountRef.current || 0);
+      const changePct = prevCount > 0 ? Math.round(((pendingCount - prevCount) / prevCount) * 100) : 0;
+      lastPendingCountRef.current = pendingCount;
 
-      // Process notifications
-      if (notificationsResponse.status === 'fulfilled') {
-        setNotifications(notificationsResponse.value.data || []);
-      }
+      // Compute department-scoped counts for the status chart
+      const deptScopedContractStatus = {
+        WAITING_LECTURER: Number(statusWaitingLecturerRes?.data?.total || 0),
+        WAITING_MANAGEMENT: Number(statusWaitingManagementRes?.data?.total || 0),
+        COMPLETED: Number(statusCompletedRes?.data?.total || 0)
+      };
 
-      // Process real-time data
-      if (realTimeResponse.status === 'fulfilled') {
-        setRealTimeStats(realTimeResponse.value.data);
-      }
+      setDashboardData(prev => ({
+        ...prev,
+        ...normalizedStats,
+        // Override pendingContracts with filtered dataset counts
+        pendingContracts: {
+          ...prev.pendingContracts,
+          count: pendingCount,
+          change: changePct,
+        },
+        // Ensure chart uses dept-scoped dynamic counts
+        contractStatus: deptScopedContractStatus,
+        lastFetch: new Date().toISOString()
+      }));
 
+      setRealTimeStats(realtimeRes.data || { onlineUsers: 0, activeContracts: 0, systemHealth: 'good' });
+      setNotifications(Array.isArray(notificationsRes.data) ? notificationsRes.data : []);
       setLastUpdated(new Date());
     } catch (error) {
       console.error('Failed to fetch dashboard data:', error);
-      await fetchFallbackData();
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
   }, [selectedTimeRange]);
-
-  // Fallback to individual API calls for more reliable data
-  const fetchFallbackData = async () => {
-    try {
-      const endpoints = [
-        { key: 'users', endpoint: '/users' },
-        { key: 'lecturers', endpoint: '/lecturers' },
-        { key: 'contracts', endpoint: '/contracts' },
-        { key: 'candidates', endpoint: '/candidates' }
-      ];
-
-      const responses = await Promise.allSettled(
-        endpoints.map(({ endpoint }) => axiosInstance.get(endpoint))
-      );
-
-      let dynamicData = {
-        activeLecturers: { count: 0, change: 0 },
-        pendingContracts: { count: 0, change: 0 },
-        renewals: { count: 0, change: 0 },
-        recruitmentInProgress: { count: 0, change: 0 },
-        totalUsers: { count: 0, change: 0 },
-        recentActivities: []
-      };
-
-      responses.forEach((response, index) => {
-        if (response.status === 'fulfilled') {
-          const data = response.value.data;
-          const dataArray = Array.isArray(data) ? data : data.data || [];
-          
-          switch (endpoints[index].key) {
-            case 'users':
-              dynamicData.totalUsers.count = dataArray.length;
-              dynamicData.totalUsers.change = Math.floor(Math.random() * 10) - 2;
-              break;
-            case 'lecturers':
-              const activeLecturers = dataArray.filter(l => l.status === 'active');
-              dynamicData.activeLecturers.count = activeLecturers.length;
-              dynamicData.activeLecturers.change = Math.floor(Math.random() * 8) - 1;
-              break;
-            case 'contracts':
-              const pendingContracts = dataArray.filter(c => c.status === 'pending');
-              dynamicData.pendingContracts.count = pendingContracts.length;
-              dynamicData.pendingContracts.change = Math.floor(Math.random() * 6) - 3;
-              
-              const renewals = dataArray.filter(c => {
-                const renewalDate = new Date(c.renewalDate);
-                const now = new Date();
-                const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, now.getDate());
-                return renewalDate <= nextMonth && renewalDate >= now;
-              });
-              dynamicData.renewals.count = renewals.length;
-              dynamicData.renewals.change = Math.floor(Math.random() * 4);
-              break;
-            case 'candidates':
-              const activeCandidates = dataArray.filter(c => c.status === 'in_progress');
-              dynamicData.recruitmentInProgress.count = activeCandidates.length;
-              dynamicData.recruitmentInProgress.change = Math.floor(Math.random() * 5);
-              break;
-          }
-        }
-      });
-
-      setDashboardData(prev => ({ ...prev, ...dynamicData }));
-    } catch (error) {
-      console.error('Fallback data fetch failed:', error);
-    }
-  };
 
   useEffect(() => {
     fetchDashboardData();
@@ -224,17 +200,14 @@ export default function AdminHome() {
         const response = await axiosInstance.get('/dashboard/realtime');
         setRealTimeStats(response.data);
       } catch (error) {
-        // Generate mock real-time data if API fails
-        setRealTimeStats(prev => ({
-          onlineUsers: Math.max(1, prev.onlineUsers + Math.floor(Math.random() * 3) - 1),
-          activeContracts: prev.activeContracts + Math.floor(Math.random() * 2),
-          systemHealth: ['good', 'excellent', 'warning'][Math.floor(Math.random() * 3)]
-        }));
+        // keep previous realtime state on transient failures
       }
     }, 30000); // 30 seconds
 
     return () => clearInterval(realtimeInterval);
   }, []);
+
+  // Presence heartbeat is handled globally in DashboardLayout
 
   useEffect(() => {
     fetchDashboardData();
@@ -260,6 +233,49 @@ export default function AdminHome() {
       case 'warning': return <AlertCircle className='w-4 h-4' />;
       case 'critical': return <XCircle className='w-4 h-4' />;
       default: return <Info className='w-4 h-4' />;
+    }
+  };
+
+  // Helper: relative time like `8 hours ago` or `Now`
+
+    // Helper: badge classes for activity status
+    const getStatusBadgeClasses = (status) => {
+      const s = String(status || '').toLowerCase();
+      switch (s) {
+        case 'completed':
+          return 'bg-green-100 text-green-700 border-green-200';
+        case 'pending':
+          return 'bg-yellow-100 text-yellow-700 border-yellow-200';
+        case 'scheduled':
+        case 'in-progress':
+          return 'bg-blue-100 text-blue-700 border-blue-200';
+        case 'expired':
+          return 'bg-red-100 text-red-700 border-red-200';
+        default:
+          return 'bg-gray-100 text-gray-700 border-gray-200';
+      }
+    };
+  const formatRelativeTime = (input) => {
+    try {
+      const t = new Date(input).getTime();
+      if (!t || Number.isNaN(t)) return '';
+      const diffMs = Date.now() - t;
+      if (diffMs < 0) return 'Now';
+      const sec = Math.floor(diffMs / 1000);
+      if (sec < 5) return 'Now';
+      if (sec < 60) return `${sec}s ago`;
+      const min = Math.floor(sec / 60);
+      if (min < 60) return `${min}m ago`;
+      const hrs = Math.floor(min / 60);
+      if (hrs < 24) return `${hrs}h ago`;
+      const days = Math.floor(hrs / 24);
+      if (days < 30) return `${days}d ago`;
+      const months = Math.floor(days / 30);
+      if (months < 12) return `${months}mo ago`;
+      const years = Math.floor(months / 12);
+      return `${years}y ago`;
+    } catch {
+      return '';
     }
   };
 
@@ -331,24 +347,24 @@ export default function AdminHome() {
 
   return (
     <div className='min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50'>
-      <div className='p-8'>
+      <div className='px-4 sm:px-6 lg:px-8 py-6'>
         {/* Enhanced Header with Real-time Status */}
         <motion.div 
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
-          className='flex flex-col lg:flex-row lg:items-center lg:justify-between mb-8'
+          className='flex flex-col lg:flex-row lg:items-center lg:justify-between mb-6 sm:mb-8'
         >
           <div className='mb-4 lg:mb-0'>
-            <div className='flex items-center gap-4 mb-2'>
+            <div className='flex items-center gap-3 sm:gap-4 mb-2'>
               <motion.div 
                 whileHover={{ scale: 1.05, rotate: 5 }}
-                className='p-3 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl text-white shadow-lg'
+                className='p-2.5 sm:p-3 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl text-white shadow-lg'
               >
-                <BarChart3 className='w-8 h-8' />
+                <BarChart3 className='w-6 h-6 sm:w-8 sm:h-8' />
               </motion.div>
               <div>
-                <h1 className='text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent'>
+                <h1 className='text-2xl sm:text-3xl lg:text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent'>
                   Admin Dashboard
                 </h1>
                 <div className='flex items-center gap-2 mt-1'>
@@ -357,14 +373,14 @@ export default function AdminHome() {
                     transition={{ duration: 2, repeat: Infinity }}
                     className={`w-2 h-2 rounded-full ${realTimeStats.systemHealth === 'good' ? 'bg-green-400' : 'bg-yellow-400'}`}
                   ></motion.div>
-                  <span className='text-sm text-gray-600'>System Status: </span>
-                  <span className={`text-sm font-medium ${getSystemHealthColor(realTimeStats.systemHealth)}`}>
+                  <span className='text-xs sm:text-sm text-gray-600'>System Status: </span>
+                  <span className={`text-xs sm:text-sm font-medium ${getSystemHealthColor(realTimeStats.systemHealth)}`}>
                     {realTimeStats.systemHealth?.charAt(0).toUpperCase() + realTimeStats.systemHealth?.slice(1)}
                   </span>
                 </div>
               </div>
             </div>
-            <p className='text-gray-600 max-w-2xl'>
+            <p className='text-gray-600 max-w-2xl text-sm sm:text-base'>
               Welcome back,{' '}
               <span className='font-semibold text-gray-900'>
                 {authUser?.fullName || authUser?.name || (authUser?.email ? authUser.email.split('@')[0] : 'Admin')}
@@ -380,13 +396,13 @@ export default function AdminHome() {
           </div>
 
           {/* Header Controls */}
-          <div className='flex items-center gap-4'>
+          <div className='flex flex-wrap items-center gap-3 sm:gap-4'>
             {/* Time Range Selector */}
             <motion.select
               whileHover={{ scale: 1.02 }}
               value={selectedTimeRange}
               onChange={(e) => setSelectedTimeRange(e.target.value)}
-              className='px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 shadow-sm'
+              className='px-3 sm:px-4 py-2 bg-white border border-gray-300 rounded-lg text-xs sm:text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 shadow-sm'
             >
               <option value="7d">Last 7 days</option>
               <option value="30d">Last 30 days</option>
@@ -402,7 +418,7 @@ export default function AdminHome() {
                 onClick={() => setShowNotifications(!showNotifications)}
                 className='p-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors relative shadow-sm'
               >
-                <Bell className='w-5 h-5 text-gray-600' />
+                <Bell className='w-4 h-4 sm:w-5 sm:h-5 text-gray-600' />
                 {notifications.length > 0 && (
                   <motion.span 
                     animate={{ scale: [1, 1.2, 1] }}
@@ -454,7 +470,7 @@ export default function AdminHome() {
               whileTap={{ scale: 0.95 }}
               onClick={() => fetchDashboardData(true)}
               disabled={isRefreshing}
-              className='flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm'
+              className='flex items-center gap-2 px-3 sm:px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm'
             >
               <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
               {isRefreshing ? 'Refreshing...' : 'Refresh'}
@@ -478,33 +494,33 @@ export default function AdminHome() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.2 }}
-          className='bg-white/80 backdrop-blur-sm rounded-xl border border-gray-200 p-4 mb-8 shadow-sm'
+          className='bg-white/80 backdrop-blur-sm rounded-xl border border-gray-200 p-4 mb-6 sm:mb-8 shadow-sm'
         >
-          <div className='flex items-center justify-between'>
-            <div className='flex items-center gap-6'>
+          <div className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3'>
+            <div className='flex flex-wrap items-center gap-x-6 gap-y-2'>
               <motion.div 
                 whileHover={{ scale: 1.05 }}
                 className='flex items-center gap-2'
               >
                 <Activity className='w-4 h-4 text-green-500' />
-                <span className='text-sm text-gray-600'>Online Users:</span>
-                <span className='font-semibold text-gray-900'>{realTimeStats.onlineUsers}</span>
+                <span className='text-xs sm:text-sm text-gray-600'>Online Users:</span>
+                <span className='text-sm font-semibold text-gray-900'>{realTimeStats.onlineUsers}</span>
               </motion.div>
               <motion.div 
                 whileHover={{ scale: 1.05 }}
                 className='flex items-center gap-2'
               >
                 <FileText className='w-4 h-4 text-blue-500' />
-                <span className='text-sm text-gray-600'>Active Contracts:</span>
-                <span className='font-semibold text-gray-900'>{realTimeStats.activeContracts}</span>
+                <span className='text-xs sm:text-sm text-gray-600'>Expired Contracts:</span>
+                <span className='text-sm font-semibold text-gray-900'>{realTimeStats.expiredContracts}</span>
               </motion.div>
               <motion.div 
                 whileHover={{ scale: 1.05 }}
                 className='flex items-center gap-2'
               >
                 {getSystemHealthIcon(realTimeStats.systemHealth)}
-                <span className='text-sm text-gray-600'>System Health:</span>
-                <span className={`font-semibold ${getSystemHealthColor(realTimeStats.systemHealth)}`}>
+                <span className='text-xs sm:text-sm text-gray-600'>System Health:</span>
+                <span className={`text-sm font-semibold ${getSystemHealthColor(realTimeStats.systemHealth)}`}>
                   {realTimeStats.systemHealth?.charAt(0).toUpperCase() + realTimeStats.systemHealth?.slice(1)}
                 </span>
               </motion.div>
@@ -517,7 +533,7 @@ export default function AdminHome() {
         </motion.div>
 
         {/* Enhanced Stats Cards */}
-        <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8'>
+          <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 sm:gap-6 mb-6 sm:mb-8'>
           <StatCard
             title="Active Lecturers"
             value={dashboardData.activeLecturers.count}
@@ -543,14 +559,14 @@ export default function AdminHome() {
           />
           
           <StatCard
-            title="Renewals"
-            value={dashboardData.renewals.count}
-            change={dashboardData.renewals.change}
-            icon={RefreshCw}
-            description="Due this month"
+            title="Completed Contracts"
+            value={statusCounts.COMPLETED}
+            change={0}
+            icon={CheckCircle}
+            description="Contracts completed"
             isLoading={isLoading}
             color="green"
-            trend={trendData.renewals}
+            trend={[]}
             index={2}
           />
           
@@ -580,13 +596,13 @@ export default function AdminHome() {
         </div>
 
         {/* Charts Section */}
-        <div className='grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8'>
+        <div className='grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8 mb-6 sm:mb-8'>
           {/* Monthly Trends Chart */}
           <motion.div 
             initial={{ opacity: 0, x: -50 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.6, delay: 0.3 }}
-            className='bg-white/80 backdrop-blur-sm p-6 rounded-xl shadow-sm border border-gray-200'
+            className='bg-white/80 backdrop-blur-sm p-5 sm:p-6 rounded-xl shadow-sm border border-gray-200'
           >
             <div className='flex items-center justify-between mb-6'>
               <div className='flex items-center gap-3'>
@@ -600,7 +616,7 @@ export default function AdminHome() {
               </div>
             </div>
             
-            <div className='h-80'>
+            <div className='h-64 sm:h-80'>
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={monthlyTrendsData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -656,7 +672,7 @@ export default function AdminHome() {
             initial={{ opacity: 0, x: 50 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.6, delay: 0.4 }}
-            className='bg-white/80 backdrop-blur-sm p-6 rounded-xl shadow-sm border border-gray-200'
+            className='bg-white/80 backdrop-blur-sm p-5 sm:p-6 rounded-xl shadow-sm border border-gray-200'
           >
             <div className='flex items-center justify-between mb-6'>
               <div className='flex items-center gap-3'>
@@ -670,7 +686,7 @@ export default function AdminHome() {
               </div>
             </div>
             
-            <div className='h-80'>
+            <div className='h-64 sm:h-80'>
               <ResponsiveContainer width="100%" height="100%">
                 <RechartsPieChart>
                   <Pie
@@ -813,13 +829,13 @@ export default function AdminHome() {
         </div>
 
         {/* Enhanced Bottom Section */}
-        <div className='grid grid-cols-1 lg:grid-cols-2 gap-8'>
+        <div className='grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8'>
           {/* Dynamic Recent Activities */}
           <motion.div 
             initial={{ opacity: 0, x: -50 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.6, delay: 0.7 }}
-            className='bg-white/80 backdrop-blur-sm p-6 rounded-xl shadow-sm border border-gray-200'
+            className='bg-white/80 backdrop-blur-sm p-5 sm:p-6 rounded-xl shadow-sm border border-gray-200'
           >
             <div className='flex items-center justify-between mb-6'>
               <div className='flex items-center gap-3'>
@@ -840,7 +856,7 @@ export default function AdminHome() {
               </motion.button>
             </div>
             
-            <div className='space-y-4 max-h-80 overflow-y-auto'>
+            <div className='space-y-4 max-h-72 sm:max-h-80 overflow-y-auto'>
               {isLoading ? (
                 // Loading skeleton
                 Array.from({ length: 5 }).map((_, index) => (
@@ -872,21 +888,31 @@ export default function AdminHome() {
                       className={`w-8 h-8 rounded-full flex items-center justify-center ${
                         activity.type === 'contract' ? 'bg-blue-100 text-blue-600' :
                         activity.type === 'user' ? 'bg-green-100 text-green-600' :
-                        activity.type === 'lecturer' ? 'bg-purple-100 text-purple-600' :
+                        activity.type === 'lecturer' || activity.type === 'candidate' ? 'bg-purple-100 text-purple-600' :
                         'bg-gray-100 text-gray-600'
                       } group-hover:scale-110 transition-transform`}
                     >
                       {activity.type === 'contract' ? <FileText className='w-4 h-4' /> :
                        activity.type === 'user' ? <Users className='w-4 h-4' /> :
-                       activity.type === 'lecturer' ? <UserPlus className='w-4 h-4' /> :
+                       activity.type === 'lecturer' || activity.type === 'candidate' ? <UserPlus className='w-4 h-4' /> :
                        <Activity className='w-4 h-4' />}
                     </motion.div>
                     <div className='flex-1 min-w-0'>
-                      <p className='text-sm text-gray-900 font-medium group-hover:text-blue-600 transition-colors'>
-                        {activity.title || activity.description}
+                      <p className='text-sm text-gray-900 font-medium group-hover:text-blue-600 transition-colors flex items-center gap-2'>
+                        <span className='truncate'>{activity.title}</span>
+                        {activity.status && (
+                          <span className={`ml-auto px-2 py-0.5 rounded-full border text-[10px] font-medium ${getStatusBadgeClasses(activity.status)}`}>
+                            {String(activity.status).charAt(0).toUpperCase() + String(activity.status).slice(1)}
+                          </span>
+                        )}
                       </p>
+                      {activity.name && (
+                        <p className='text-xs text-gray-600 mt-1 truncate'>
+                          {activity.name}
+                        </p>
+                      )}
                       <p className='text-xs text-gray-500 mt-1'>
-                        {activity.time || new Date(activity.createdAt || Date.now()).toLocaleString()}
+                        {formatRelativeTime(activity.time || activity.createdAt)}
                       </p>
                     </div>
                   </motion.div>
@@ -910,7 +936,7 @@ export default function AdminHome() {
             initial={{ opacity: 0, x: 50 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.6, delay: 0.8 }}
-            className='bg-white/80 backdrop-blur-sm p-6 rounded-xl shadow-sm border border-gray-200'
+            className='bg-white/80 backdrop-blur-sm p-5 sm:p-6 rounded-xl shadow-sm border border-gray-200'
           >
             <div className='flex items-center justify-between mb-6'>
               <div className='flex items-center gap-3'>
@@ -932,27 +958,27 @@ export default function AdminHome() {
             </div>
             
             <div className='grid grid-cols-1 sm:grid-cols-2 gap-4'>
-              {/* Manage Users Action */}
+              {/* Recruitment Candidate Action */}
               <motion.div 
                 whileHover={{ scale: 1.02, y: -2 }}
                 whileTap={{ scale: 0.98 }}
                 className='group p-4 bg-gradient-to-br from-purple-50 to-blue-50 rounded-xl border border-purple-200 hover:from-purple-100 hover:to-blue-100 transition-all duration-300 cursor-pointer shadow-sm hover:shadow-md'
-                onClick={() => window.location.href = '/superadmin/users'}
+                onClick={() => navigate('/admin/recruitment')}
               >
                 <div className='flex items-center gap-3 mb-3'>
                   <motion.div 
                     whileHover={{ rotate: 10 }}
                     className='p-2 bg-purple-100 group-hover:bg-purple-200 rounded-lg transition-colors'
                   >
-                    <Users className='w-5 h-5 text-purple-600' />
+                    <UserPlus className='w-5 h-5 text-purple-600' />
                   </motion.div>
                   <div>
-                    <h3 className='font-semibold text-purple-700 group-hover:text-purple-800'>Manage Users</h3>
-                    <p className='text-xs text-purple-600'>User administration</p>
+                    <h3 className='font-semibold text-purple-700 group-hover:text-purple-800'>Recruitment Candidate</h3>
+                    <p className='text-xs text-purple-600'>Manage lecturer recruitment candidates</p>
                   </div>
                 </div>
                 <div className='flex items-center justify-between'>
-                  <span className='text-sm text-purple-600'>Access user management</span>
+                  <span className='text-sm text-purple-600'>Manage recruitment</span>
                   <motion.div
                     animate={{ x: [0, 5, 0] }}
                     transition={{ duration: 2, repeat: Infinity }}
@@ -962,54 +988,57 @@ export default function AdminHome() {
                 </div>
               </motion.div>
 
-              {/* Generate Contract Action */}
+              {/* Add Lecturer Action */}
               <motion.div 
                 whileHover={{ scale: 1.02, y: -2 }}
                 whileTap={{ scale: 0.98 }}
                 className='group p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-200 hover:from-blue-100 hover:to-indigo-100 transition-all duration-300 cursor-pointer shadow-sm hover:shadow-md'
+                onClick={() => navigate('/admin/lecturers')}
               >
                 <div className='flex items-center gap-3 mb-3'>
                   <motion.div 
                     whileHover={{ rotate: 10 }}
                     className='p-2 bg-blue-100 group-hover:bg-blue-200 rounded-lg transition-colors'
                   >
-                    <FileText className='w-5 h-5 text-blue-600' />
+                    <Users className='w-5 h-5 text-blue-600' />
                   </motion.div>
                   <div>
-                    <h3 className='font-semibold text-blue-700 group-hover:text-blue-800'>Generate Contract</h3>
-                    <p className='text-xs text-blue-600'>Create new contracts</p>
+                    <h3 className='font-semibold text-blue-700 group-hover:text-blue-800'>Add Lecturer</h3>
+                    <p className='text-xs text-blue-600'>Add and manage lecturers</p>
                   </div>
                 </div>
                 <div className='flex items-center justify-between'>
-                  <span className='text-sm text-blue-600'>Coming Soon</span>
-                  <motion.div 
-                    animate={{ scale: [1, 1.2, 1] }}
+                  <span className='text-sm text-blue-600'>Open lecturer management</span>
+                  <motion.div
+                    animate={{ x: [0, 5, 0] }}
                     transition={{ duration: 2, repeat: Infinity }}
-                    className='w-4 h-4 bg-blue-200 rounded-full'
-                  />
+                  >
+                    <ArrowUp className='w-4 h-4 text-blue-400 transform rotate-45' />
+                  </motion.div>
                 </div>
               </motion.div>
 
-              {/* View Reports Action */}
+              {/* Course Mapping Action */}
               <motion.div 
                 whileHover={{ scale: 1.02, y: -2 }}
                 whileTap={{ scale: 0.98 }}
                 className='group p-4 bg-gradient-to-br from-green-50 to-teal-50 rounded-xl border border-green-200 hover:from-green-100 hover:to-teal-100 transition-all duration-300 cursor-pointer shadow-sm hover:shadow-md'
+                onClick={() => navigate('/admin/course-mapping')}
               >
                 <div className='flex items-center gap-3 mb-3'>
                   <motion.div 
                     whileHover={{ rotate: 10 }}
                     className='p-2 bg-green-100 group-hover:bg-green-200 rounded-lg transition-colors'
                   >
-                    <BarChart3 className='w-5 h-5 text-green-600' />
+                    <BookOpen className='w-5 h-5 text-green-600' />
                   </motion.div>
                   <div>
-                    <h3 className='font-semibold text-green-700 group-hover:text-green-800'>View Reports</h3>
-                    <p className='text-xs text-green-600'>Analytics & insights</p>
+                    <h3 className='font-semibold text-green-700 group-hover:text-green-800'>Course Mapping</h3>
+                    <p className='text-xs text-green-600'>Assign and manage course mappings</p>
                   </div>
                 </div>
                 <div className='flex items-center justify-between'>
-                  <span className='text-sm text-green-600'>Generate reports</span>
+                  <span className='text-sm text-green-600'>Open course mapping</span>
                   <motion.div
                     animate={{ x: [0, 5, 0] }}
                     transition={{ duration: 2, repeat: Infinity }}
@@ -1019,26 +1048,27 @@ export default function AdminHome() {
                 </div>
               </motion.div>
 
-              {/* System Settings Action */}
+              {/* Generate Contract Action */}
               <motion.div 
                 whileHover={{ scale: 1.02, y: -2 }}
                 whileTap={{ scale: 0.98 }}
                 className='group p-4 bg-gradient-to-br from-orange-50 to-red-50 rounded-xl border border-orange-200 hover:from-orange-100 hover:to-red-100 transition-all duration-300 cursor-pointer shadow-sm hover:shadow-md'
+                onClick={() => navigate('/admin/contracts')}
               >
                 <div className='flex items-center gap-3 mb-3'>
                   <motion.div 
                     whileHover={{ rotate: 10 }}
                     className='p-2 bg-orange-100 group-hover:bg-orange-200 rounded-lg transition-colors'
                   >
-                    <Settings className='w-5 h-5 text-orange-600' />
+                    <FileText className='w-5 h-5 text-orange-600' />
                   </motion.div>
                   <div>
-                    <h3 className='font-semibold text-orange-700 group-hover:text-orange-800'>System Settings</h3>
-                    <p className='text-xs text-orange-600'>Configure system</p>
+                    <h3 className='font-semibold text-orange-700 group-hover:text-orange-800'>Generate Contract</h3>
+                    <p className='text-xs text-orange-600'>Create and manage lecturer contracts</p>
                   </div>
                 </div>
                 <div className='flex items-center justify-between'>
-                  <span className='text-sm text-orange-600'>Admin settings</span>
+                  <span className='text-sm text-orange-600'>Open contract generation</span>
                   <motion.div
                     animate={{ x: [0, 5, 0] }}
                     transition={{ duration: 2, repeat: Infinity }}
@@ -1056,11 +1086,11 @@ export default function AdminHome() {
               transition={{ delay: 1 }}
               className='mt-6 pt-6 border-t border-gray-200'
             >
-              <div className='grid grid-cols-3 gap-4'>
+              <div className='grid grid-cols-3 gap-3 sm:gap-4'>
                 {[
                   { label: 'Total Users', value: dashboardData.totalUsers.count, icon: Users, color: 'blue' },
                   { label: 'Active Lecturers', value: dashboardData.activeLecturers.count, icon: GraduationCap, color: 'green' },
-                  { label: 'Pending Tasks', value: dashboardData.pendingContracts.count, icon: Clock, color: 'orange' }
+                  { label: 'Pending Contracts', value: dashboardData.pendingContracts.count, icon: Clock, color: 'orange' }
                 ].map((stat, index) => (
                   <motion.div 
                     key={stat.label}
