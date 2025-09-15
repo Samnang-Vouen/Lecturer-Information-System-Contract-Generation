@@ -507,7 +507,7 @@ export default function CoursesPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Hours <span className="text-red-500" aria-hidden="true">*</span></label>
                   <div className="mt-2 flex flex-wrap gap-2">
-                    {[15, 30, 45, 90].map(v => (
+                    {[15, 30, 45, 60].map(v => (
                       <button key={v} type="button" onClick={() => {
                         const hours = String(v);
                         const credits = creditsFromHours(v);
