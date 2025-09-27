@@ -254,7 +254,7 @@ export default function LecturerManagement(){
       const raw = res.data || {};
       const detail = raw.data || raw.profile || raw.lecturer_profile || raw || {};
       const get = (k, alt) => detail[k] ?? raw[k] ?? raw.data?.[k] ?? raw.profile?.[k] ?? raw.lecturer_profile?.[k] ?? alt;
-  const prefilledBio = get('short_bio') || extractBio(raw);
+      const prefilledBio = get('short_bio') || extractBio(raw);
       const enriched = {
         id: lecturer.id,
         name: lecturer.name || get('name',''),
@@ -278,7 +278,7 @@ export default function LecturerManagement(){
         account_number: get('account_number','') || get('accountNumber',''),
         payrollFilePath: get('payrollFilePath') || get('payroll_file_path') || get('payroll_path') || get('payrollPath') || get('pay_roll_in_riel') || '',
         candidateId: get('candidateId', null),
-  hourlyRateThisYear: (get('hourlyRateThisYear', '')) ?? ''
+        hourlyRateThisYear: (get('hourlyRateThisYear', '')) ?? ''
       };
       setSelectedLecturer(enriched);
       setDialogReadonly(false);
@@ -297,7 +297,7 @@ export default function LecturerManagement(){
       const raw = res.data || {};
       const detail = raw.data || raw.profile || raw.lecturer_profile || raw || {};
       const get = (k, alt) => detail[k] ?? raw[k] ?? raw.data?.[k] ?? raw.profile?.[k] ?? raw.lecturer_profile?.[k] ?? alt;
-  const prefilledBio = get('short_bio') || extractBio(raw);
+      const prefilledBio = get('short_bio') || extractBio(raw);
       const enriched = {
         id: lecturer.id,
         name: lecturer.name || get('name',''),
@@ -318,9 +318,9 @@ export default function LecturerManagement(){
         syllabusFilePath: get('syllabusFilePath') || get('syllabus_file_path') || '',
         bank_name: get('bank_name','') || get('bankName',''),
         account_name: get('account_name','') || get('accountName',''),
-  account_number: get('account_number','') || get('accountNumber',''),
-  payrollFilePath: get('payrollFilePath') || get('payroll_file_path') || get('payroll_path') || get('payrollPath') || get('pay_roll_in_riel') || '',
-  hourlyRateThisYear: (get('hourlyRateThisYear', '')) ?? ''
+        account_number: get('account_number','') || get('accountNumber',''),
+        payrollFilePath: get('payrollFilePath') || get('payroll_file_path') || get('payroll_path') || get('payrollPath') || get('pay_roll_in_riel') || '',
+        hourlyRateThisYear: (get('hourlyRateThisYear', '')) ?? ''
       };
       setSelectedLecturer(enriched);
       setDialogReadonly(true);
@@ -682,8 +682,9 @@ export default function LecturerManagement(){
         {selectedLecturer && (
           <div className='space-y-6'>
             <Tabs value={editTab} onValueChange={setEditTab}>
-              <div className='overflow-x-auto -mx-1 px-1'>
-              <TabsList ariaLabel='Profile sections'>
+              {/* Sticky tabs container so tabs are always fully visible while scrolling */}
+              <div className='overflow-x-auto -mx-1 px-1 sticky top-0 bg-white z-20 pt-1 pb-2 border-b border-gray-100'>
+              <TabsList ariaLabel='Profile sections' activeTab={editTab} onChangeTab={setEditTab}>
                 <TabsTrigger value='basic' className='justify-start text-center whitespace-normal break-words min-w-0'>Basic Info</TabsTrigger>
                 <TabsTrigger value='bank' className='justify-start text-center whitespace-normal break-words min-w-0'>Bank Info</TabsTrigger>
                 <TabsTrigger value='education' className='justify-start text-center whitespace-normal break-words min-w-0'>Education</TabsTrigger>
