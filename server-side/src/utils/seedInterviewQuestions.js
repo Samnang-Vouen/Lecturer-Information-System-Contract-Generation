@@ -51,7 +51,12 @@ const seedData = {
 export const activeInterviewCategories = Object.keys(seedData);
 
 export async function seedInterviewQuestions() {
-  if (process.env.SEED_INTERVIEW_QUESTIONS !== 'true') return; // fast skip
+  if (process.env.SEED_INTERVIEW_QUESTIONS === 'true') {
+    console.log('[seedInterviewQuestions] Seeding interview questions...');
+    return;
+  } else{
+    console.log('[seedInterviewQuestions] Skipping interview question seeding (SEED_INTERVIEW_QUESTIONS not true)');
+  } // fast skip
   const activeCategories = Object.keys(seedData);
   const existingCount = await InterviewQuestion.count();
   if (existingCount && process.env.SEED_FORCE !== 'true') {
